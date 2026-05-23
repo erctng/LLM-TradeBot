@@ -157,8 +157,10 @@ class MultiAgentTradingBot:
             self.saver,
             self.trading_parameters
         )
+        self.runner_factory.execute_order_callback = self._execute_order
+        self.runner_factory.save_virtual_state_callback = self._save_virtual_state
         
-        print(f"\n⚙️  Trading Config:")
+        print(f"\n🔧  Trading Config:")
         print(f"  - Symbols: {', '.join(self.symbol_manager.symbols)}")
         print(f"  - Max Position: ${trading_parameters.max_position_size:.2f} USDT")
         print(f"  - Leverage: {trading_parameters.leverage}x")
@@ -362,7 +364,7 @@ class MultiAgentTradingBot:
         self._last_agent_config = dict(normalized_agents)
         global_state.agent_config = normalized_agents
 
-        self.agent_provider.reload(self.client)
+        self.agent_provider.reload(self.client, self.symbol_manager.symbols)
 
     async def resolve_auto3_symbols(self):
         """
@@ -818,7 +820,7 @@ class MultiAgentTradingBot:
 
         if mode == "test":
             if not self.trading_parameters.test_mode:
-                live_active = self._get_active_position_symbols()
+                live_active = self.symbol_manager.get_active_position_symbols()
                 if live_active:
                     raise RuntimeError(
                         f"Cannot switch to TEST while LIVE positions are open: {', '.join(live_active)}"
@@ -869,7 +871,7 @@ class MultiAgentTradingBot:
         
         # Recreate client on mode switch to pick up latest env/config credentials.
         self.client = BinanceClient(api_key=fresh_api_key, api_secret=fresh_api_secret, test_mode=self.trading_parameters.test_mode)
-        self.agent_provider.reload(self.client)
+        self.agent_provider.reload(self.client, self.symbol_manager.symbols)
         self.runner_factory.client = self.client
 
         try:

@@ -75,14 +75,17 @@ class RunnerFactory:
             self.agent_config,
             self.strategy_engine,
             self.agent_provider,
-            self.trading_parameters.max_position_size
+            self.trading_parameters.max_position_size,
+            self.trading_parameters.test_mode
         )
     
     @property
     def execution_stage_runner(self) -> ExecutionStageRunner:
         return ExecutionStageRunner(
-            self.saver, 
-            self.trading_parameters.test_mode
+            saver=self.saver,
+            test_mode=self.trading_parameters.test_mode,
+            execute_order_callback=getattr(self, 'execute_order_callback', None),
+            save_virtual_state_callback=getattr(self, 'save_virtual_state_callback', None)
         )
     
     @property

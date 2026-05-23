@@ -79,6 +79,9 @@ class DataSyncAgent:
             MarketSnapshot对象，包含双视图数据
         """
         start_time = datetime.now()
+        q_data = {}
+        b_funding = {}
+        b_oi = {}
         
         # log.oracle(f"📊 开始并发获取 {symbol} 数据...")
         

@@ -23,11 +23,27 @@ class ExecutionStageRunner:
     def __init__(
         self,
         saver: DataSaver,
-        test_mode: bool
+        test_mode: bool,
+        execute_order_callback=None,
+        save_virtual_state_callback=None
     ):
         self.saver = saver
         self.test_mode = test_mode
-    
+        self.execute_order_callback = execute_order_callback
+        self.save_virtual_state_callback = save_virtual_state_callback
+
+    def _save_virtual_state(self):
+        if self.save_virtual_state_callback:
+            self.save_virtual_state_callback()
+        else:
+            self.saver.save_virtual_account(global_state.virtual_balance, global_state.virtual_positions)
+
+    def _execute_order(self, order_params: Dict) -> bool:
+        if self.execute_order_callback:
+            return self.execute_order_callback(order_params)
+        log.error("No execute_order_callback provided to ExecutionStageRunner")
+        return False
+
     @log_run
     async def run(
         self,

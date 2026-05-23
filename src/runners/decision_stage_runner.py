@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from typing import Dict, Optional, Any, Tuple
+import pandas as pd
 
 from dataclasses import asdict
 
@@ -33,11 +34,13 @@ class DecisionStageRunner:
         strategy_engine: StrategyEngine,
         agent_provider: AgentProvider,
         max_position_size: float = 100.0,
+        test_mode: bool = False
     ):
         self.config = config
         self.agent_config = agent_config
         self.max_position_size = max_position_size
         self.agent_provider = agent_provider
+        self.test_mode = test_mode
         self.strategy_engine = strategy_engine
     
     @log_run
