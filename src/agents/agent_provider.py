@@ -38,7 +38,7 @@ class AgentProvider:
         self.trigger_detector_agent = TriggerDetector()
         self.quant_analyst_agent = QuantAnalystAgent()     
         self.multi_period_agent = MultiPeriodParserAgent()
-        self.decision_core_agent = DecisionCoreAgent()
+        self.decision_core = DecisionCoreAgent()
         self.symbol_selector_agent = SymbolSelectorAgent()
           
         print("  ✅ TriggerDetector ready")
