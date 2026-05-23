@@ -142,7 +142,7 @@ class ReflectionAgentLLM(ReflectionAgent):
             return self.last_reflection.to_prompt_text()
         return None
     
-    def get_user_prompt(self) -> str:
+    def get_system_prompt(self) -> str:
         """Build system prompt for reflection LLM call"""
         return """You are a professional trading retrospection analyst specializing in cryptocurrency futures.
 Analyze the provided trade history and generate actionable insights to improve future trading decisions.

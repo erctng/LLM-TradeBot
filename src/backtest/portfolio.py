@@ -632,16 +632,18 @@ class BacktestPortfolio:
         symbol: str,
         price: float,
         timestamp: datetime,
-        reason: str = "signal"
+        reason: str = "signal",
+        quantity: float = None
     ) -> Optional[Trade]:
         """
-        平仓
+        平仓 (支持全部平仓或部分平仓)
         
         Args:
             symbol: Trading pair
             price: 平仓价格
             timestamp: Timestamp
             reason: 平仓原因 (signal/stop_loss/take_profit)
+            quantity: 平仓数量 (None = 全部平仓)
             
         Returns:
             Trade 对象，或 None（如果平仓失败）
@@ -651,6 +653,8 @@ class BacktestPortfolio:
             return None
         
         position = self.positions[symbol]
+        close_qty = position.quantity if quantity is None else min(quantity, position.quantity)
+        is_partial = close_qty < position.quantity
         
         # Calculate price after slippage
         slippage_impact = price * self.slippage
@@ -659,19 +663,19 @@ class BacktestPortfolio:
         else:
             exec_price = price + slippage_impact  # 买回时滑点向上
         
-        # 计算盈亏
-        pnl = position.get_pnl(exec_price)
+        # 计算盈亏 (按平仓数量比例)
+        pnl = position.get_pnl(exec_price) * (close_qty / position.quantity)
         pnl_pct = position.get_pnl_pct(exec_price)
         
         # Calculate commission
-        notional = position.quantity * exec_price
+        notional = close_qty * exec_price
         commission = notional * self.commission
         
         # 计算Holding time
         holding_time = (timestamp - position.entry_time).total_seconds() / 3600
         
-        # Calculate initial margin
-        initial_margin = position.quantity * position.entry_price / self.margin_config.leverage
+        # Calculate initial margin (proportional)
+        initial_margin = close_qty * position.entry_price / self.margin_config.leverage
         
         # 更新Capital: 返还Margin + 盈亏 - Fee
         self.cash += initial_margin + pnl - commission
@@ -683,26 +687,32 @@ class BacktestPortfolio:
             symbol=symbol,
             side=position.side,
             action="close",
-            quantity=position.quantity,
+            quantity=close_qty,
             price=exec_price,
             timestamp=timestamp,
             pnl=pnl,  # 原始PnL（未扣Fee）
             pnl_pct=pnl_pct,
             commission=commission,
-            slippage=slippage_impact * position.quantity,
+            slippage=slippage_impact * close_qty,
             entry_price=position.entry_price,
             holding_time=holding_time,
             close_reason=reason
         )
         self.trades.append(trade)
         
-        # 删除持仓
-        del self.positions[symbol]
-        
-        pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
-        log.info(f"📉 Closed {position.side.value.upper()} | {symbol} | "
-                 f"PnL: {pnl_str} ({pnl_pct:+.2f}%) | "
-                 f"Hold: {holding_time:.1f}h | Reason: {reason}")
+        if is_partial:
+            # 部分平仓: 减少持仓数量
+            position.quantity -= close_qty
+            log.info(f"📉 Partially closed {position.side.value.upper()} | {symbol} | "
+                     f"Closed: {close_qty:.4f}, Remaining: {position.quantity:.4f} | "
+                     f"PnL: {'+'if pnl>=0 else ''}${pnl:.2f} ({pnl_pct:+.2f}%)")
+        else:
+            # 全部平仓: 删除持仓
+            del self.positions[symbol]
+            pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
+            log.info(f"📉 Closed {position.side.value.upper()} | {symbol} | "
+                     f"PnL: {pnl_str} ({pnl_pct:+.2f}%) | "
+                     f"Hold: {holding_time:.1f}h | Reason: {reason}")
         
         return trade
     

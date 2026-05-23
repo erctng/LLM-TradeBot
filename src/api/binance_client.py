@@ -576,9 +576,9 @@ class BinanceClient:
                 continue
 
         try:
-            acc_info = self.client.get_futures_account()
-            wallet = float(acc_info.get('total_wallet_balance', 0) or 0)
-            unrealized = float(acc_info.get('total_unrealized_profit', 0) or 0)
+            acc_info = self.client.futures_account()
+            wallet = float(acc_info.get('totalWalletBalance', 0) or 0)
+            unrealized = float(acc_info.get('totalUnrealizedProfit', 0) or 0)
             equity = wallet + unrealized
             return equity if equity > 0 else float(wallet)
         except Exception:

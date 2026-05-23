@@ -29,7 +29,6 @@ import time
 
 from src.utils.logger import log
 from src.config import config
-from src.backtest.engine import BacktestEngine, BacktestConfig
 
 
 def calculate_adx(klines: List[Dict], period: int = 14) -> float:
@@ -908,6 +907,7 @@ class SymbolSelectorAgent:
         step: int = 12
     ) -> Optional[Dict]:
         """Run backtest for a single symbol using thread executor"""
+        from src.backtest.engine import BacktestEngine, BacktestConfig
         try:
             config = BacktestConfig(
                 symbol=symbol,

@@ -73,6 +73,8 @@ class MultiAgentTradingBot:
 
         self._headless_mode = False
         self._headless_filter = HeadlessFilter()
+        self._stop_logged = False
+        self._pause_logged = False
         
         self.config = Config()
         self.client = BinanceClient(test_mode=trading_parameters.test_mode)

@@ -47,10 +47,12 @@ class Ai500Updater:
                             log.info(f"📊 AI500 Updated - Added: {added}, Removed: {removed}")
                             log.info(f"📋 Current symbols: {', '.join(self.symbol_manager.symbols)}")
                             for symbol in added:
-                                if symbol not in self.predict_agents:
-                                    from src.agents.predict import PredictAgent
-                                    self.agent_provider.predict_agents_provider.predict_agents[symbol] = PredictAgent(symbol=symbol)
-                                    log.info(f"🆕 Initialized PredictAgent for {symbol}")
+                                predict_provider = getattr(self.agent_provider, 'predict_agents_provider', None)
+                                if predict_provider and hasattr(predict_provider, 'predict_agents'):
+                                    if symbol not in predict_provider.predict_agents:
+                                        from src.agents.predict import PredictAgent
+                                        predict_provider.predict_agents[symbol] = PredictAgent(symbol=symbol)
+                                        log.info(f"🆕 Initialized PredictAgent for {symbol}")
                         else:
                             log.info("✅ AI500 Updated - No changes in Top5")
                             

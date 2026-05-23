@@ -40,6 +40,15 @@ class AgentProvider:
         self.multi_period_agent = MultiPeriodParserAgent()
         self.decision_core = DecisionCoreAgent()
         self.symbol_selector_agent = SymbolSelectorAgent()
+
+        # Lazy-initialized agents (set by _set_agents / initialize)
+        self.reflection_agent = None
+        self.trend_agent = None
+        self.setup_agent = None
+        self.trigger_agent = None
+        self.regime_detector_agent = None
+        self.data_sync_agent = None
+        self.predict_agents_provider = None
           
         print("  ✅ TriggerDetector ready")
         print("  ✅ QuantAnalystAgent ready")

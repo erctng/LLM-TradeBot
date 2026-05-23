@@ -207,7 +207,8 @@ class SymbolManager:
             log.info(f"📊 AI500 Updated - Added: {added}, Removed: {removed}")
             log.info(f"📋 Current symbols: {', '.join(self._symbols)}")
             for symbol in added:
-                self.predict_add_callback(symbol, horizon='30m')
+                if hasattr(self, 'predict_add_callback'):
+                    self.predict_add_callback(symbol, horizon='30m')
         else:
             log.info("✅ AI500 Updated - No changes in Top5")
 
