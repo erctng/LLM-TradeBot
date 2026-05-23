@@ -125,8 +125,8 @@ async def login(response: Response, data: LoginRequest):
             value=session_id, 
             httponly=True, 
             max_age=86400 * 7,  # 7 days
-            samesite="none" if IS_PRODUCTION else "lax",  # "none" required for cross-site HTTPS
-            secure=IS_PRODUCTION  # Must be True for HTTPS (Railway)
+            samesite="lax",  # "lax" works for both HTTP and same-site HTTPS
+            secure=False  # Must be False for plain HTTP access on IP address
         )
         return {"status": "success", "role": role}
     else:

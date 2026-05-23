@@ -938,6 +938,9 @@ class MultiAgentTradingBot:
         t = threading.Thread(target=_monitor, daemon=True)
         t.start()
 
+    def _get_auto1_execution_bonus(self, symbol: str) -> float:
+        return 0.0
+
     def run_continuous(self, interval_minutes: int = 3, headless: bool = False):
         """
         持续运行模式

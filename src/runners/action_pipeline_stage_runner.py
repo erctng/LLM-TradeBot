@@ -23,6 +23,7 @@ class ActionPipelineStageRunner:
         self.risk_audit_stage_runner = risk_audit_stage_runner
         self.execution_stage_runner = execution_stage_runner
         self.result_builder = ResultBuilder(saver)
+        self.saver = saver
     
     @log_run
     async def run(

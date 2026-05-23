@@ -74,6 +74,7 @@ class RunnerFactory:
             self.config,
             self.agent_config,
             self.strategy_engine,
+            self.agent_provider,
             self.trading_parameters.max_position_size
         )
     
