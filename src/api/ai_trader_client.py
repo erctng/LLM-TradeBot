@@ -186,3 +186,73 @@ class AITraderClient:
                     
         except Exception as e:
             log.error(f"❌ AI-Trader CopyTrade Sync Error: {e}")
+
+    def auto_follow_best_trader(self) -> None:
+        """
+        Scan AI-Trader leaderboard and subscribe to the most profitable trader.
+        Unfollows any other previously followed traders to free up capital (Option A).
+        """
+        if not self.enabled:
+            return
+            
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+            
+            # 1. Fetch Leaderboard (Grouped Signals)
+            resp_grouped = requests.get(f"{self.BASE_URL}/signals/grouped?limit=50", headers=headers, timeout=10)
+            if resp_grouped.status_code != 200:
+                log.warning(f"⚠️ Auto-Follow failed to fetch leaderboard: HTTP {resp_grouped.status_code}")
+                return
+            
+            agents = resp_grouped.json().get("agents", [])
+            if not agents:
+                return
+                
+            # Find the best agent by total_pnl > 0
+            best_agent = None
+            max_pnl = 0.0
+            for agent in agents:
+                pnl = float(agent.get("total_pnl", 0.0))
+                if pnl > max_pnl:
+                    max_pnl = pnl
+                    best_agent = agent
+                    
+            if not best_agent:
+                log.info("No profitable leader found to auto-follow right now.")
+                return
+                
+            target_leader_id = best_agent["agent_id"]
+            target_leader_name = best_agent["agent_name"]
+            
+            # 2. Check current subscriptions
+            resp_following = requests.get(f"{self.BASE_URL}/signals/following", headers=headers, timeout=10)
+            if resp_following.status_code != 200:
+                return
+                
+            subscriptions = resp_following.json().get("subscriptions", [])
+            already_following_best = False
+            leaders_to_unfollow = []
+            
+            for sub in subscriptions:
+                if sub.get("status") == "active":
+                    sub_id = sub.get("leader_id")
+                    if sub_id == target_leader_id:
+                        already_following_best = True
+                    else:
+                        leaders_to_unfollow.append((sub_id, sub.get("leader_name")))
+                        
+            # 3. Unfollow previous leaders
+            for uid, uname in leaders_to_unfollow:
+                log.info(f"🔄 Auto-Follow: Unfollowing previous leader {uname} (ID: {uid}) to switch to #1.")
+                requests.post(f"{self.BASE_URL}/signals/unfollow", headers=headers, json={"leader_id": uid}, timeout=10)
+                
+            # 4. Follow best leader if not already following
+            if not already_following_best:
+                log.info(f"🏆 Auto-Follow: Subscribing to new #1 leader {target_leader_name} (PnL: +{max_pnl:.2f})!")
+                requests.post(f"{self.BASE_URL}/signals/follow", headers=headers, json={"leader_id": target_leader_id}, timeout=10)
+                
+        except Exception as e:
+            log.error(f"❌ Auto-Follow Error: {e}")

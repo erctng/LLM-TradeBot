@@ -793,9 +793,16 @@ class MultiAgentTradingBot:
         import time
         from src.server.state import global_state
         
+        last_auto_follow = 0
         while global_state.is_running:
             try:
                 if hasattr(self, 'ai_trader_client') and self.ai_trader_client.enabled:
+                    # Auto-Follow top leader every hour (3600 seconds)
+                    current_time = time.time()
+                    if current_time - last_auto_follow > 3600:
+                        self.ai_trader_client.auto_follow_best_trader()
+                        last_auto_follow = current_time
+                        
                     self.ai_trader_client.sync_copy_trades(self._copytrade_execution_callback)
             except Exception as e:
                 log.error(f"CopyTrade Loop Error: {e}")
