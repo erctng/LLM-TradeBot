@@ -77,18 +77,18 @@ agents:
   trigger_detector_agent: true     # 5m K线模式检测
   
   # LLM 语义分析 (消耗 API 额度，默认关闭)
-  trend_agent_llm: false           # 1h 趋势 LLM 分析
-  setup_agent_llm: false           # 15m 入场 LLM 分析
-  trigger_agent_llm: false         # 5m 触发 LLM 分析
+  trend_agent_llm: true           # 1h 趋势 LLM 分析
+  setup_agent_llm: true           # 15m 入场 LLM 分析
+  trigger_agent_llm: true         # 5m 触发 LLM 分析
   
   # 本地语义分析 (不调用 LLM)
-  trend_agent_local: true          # 1h 趋势规则分析
-  setup_agent_local: true          # 15m 入场规则分析
-  trigger_agent_local: true        # 5m 触发规则分析
+  trend_agent_local: false          # 1h 趋势规则分析
+  setup_agent_local: false          # 15m 入场规则分析
+  trigger_agent_local: false        # 5m 触发规则分析
   
   # 交易反思
-  reflection_agent_llm: false      # 每 10 笔交易后 LLM 反思
-  reflection_agent_local: true     # 本地规则反思
+  reflection_agent_llm: true      # 每 10 笔交易后 LLM 反思
+  reflection_agent_local: false     # 本地规则反思
   
   # 选币
   symbol_selector_agent: true      # AUTO1/AUTO3 自动选币
