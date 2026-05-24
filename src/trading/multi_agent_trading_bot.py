@@ -27,6 +27,7 @@ from src.server.state import global_state
 from .cycle_context import CycleContext
 from .symbol_manager import SymbolManager
 from .ai500_updater import Ai500Updater  # ✅ AI500 Dynamic Updater
+from src.api.ai_trader_client import AITraderClient  # ✅ AI-Trader Sync Module
 from .trading_parameters import TradingParameters
 from .headless_filter import HeadlessFilter
 
@@ -139,6 +140,10 @@ class MultiAgentTradingBot:
             trading_parameters.test_mode)
         self.ai500_updater = Ai500Updater(self.symbol_manager, self.agent_provider)  # ✅ AI500 Updater
 
+        # 🔌 AI-Trader Client
+        ai_token = os.environ.get('AI_TRADER_TOKEN', '')
+        ai_sync_enabled = os.environ.get('ENABLE_AI_TRADER_SYNC', 'false').lower() in ('true', '1', 'yes')
+        self.ai_trader_client = AITraderClient(token=ai_token if ai_sync_enabled else None)
         self.agent_provider.initialize(self.symbol_manager.symbols)
         
         # 🧠 DeepSeek 决策引擎
@@ -654,6 +659,17 @@ class MultiAgentTradingBot:
                 global_state.trade_history.pop()
             global_state.cycle_positions_opened += 1
             global_state.add_log(f"[🚀 EXECUTOR] Test: {action.upper()} {quantity} @ {current_price:.2f}")
+
+            # 🌐 AI-Trader Sync (Simulated)
+            if hasattr(self, 'ai_trader_client'):
+                self.ai_trader_client.publish_trade(
+                    internal_action=action,
+                    symbol=suggestion_symbol,
+                    price=current_price,
+                    quantity=quantity,
+                    content=f"Simulated {action} (Confidence: {order_params.get('confidence', 'N/A')}%)"
+                )
+
             return {'status': 'success', 'action': action, 'details': order_params, 'current_price': current_price}
 
         is_success = self._execute_order(order_params)
@@ -692,6 +708,17 @@ class MultiAgentTradingBot:
             global_state.trade_history.pop()
         global_state.cycle_positions_opened += 1
         global_state.add_log(f"[🚀 EXECUTOR] Live: {action.upper()} {quantity} => ✅ SENT")
+
+        # 🌐 AI-Trader Sync (Live)
+        if hasattr(self, 'ai_trader_client'):
+            self.ai_trader_client.publish_trade(
+                internal_action=action,
+                symbol=suggestion_symbol,
+                price=current_price,
+                quantity=quantity,
+                content=f"Live {action} (Confidence: {order_params.get('confidence', 'N/A')}%)"
+            )
+
         return {'status': 'success', 'action': action, 'details': order_params, 'current_price': current_price}
     
     def _execute_order(self, order_params: Dict) -> bool:
