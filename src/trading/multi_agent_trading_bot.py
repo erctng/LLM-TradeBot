@@ -1032,7 +1032,8 @@ class MultiAgentTradingBot:
                         self._apply_agent_config(refreshed_map)
                     global_state.config_changed = False  # Reset flag
                 
-                runtime_agents = getattr(global_state, 'agent_config', None)
+                runtime_settings = getattr(global_state, 'agent_settings', None)
+                runtime_agents = runtime_settings.get('agents', {}) if runtime_settings else None
                 if runtime_agents and runtime_agents != self._last_agent_config:
                     log.info(f"🔧 Runtime agent config updated: {runtime_agents}")
                     self._apply_agent_config(runtime_agents)
