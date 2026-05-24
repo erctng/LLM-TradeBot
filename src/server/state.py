@@ -52,6 +52,7 @@ class SharedState:
     virtual_initial_balance: float = 1000.0  # Starting balance for test mode
     virtual_balance: float = 1000.0  # Current balance in test mode
     virtual_positions: Dict[str, Dict] = field(default_factory=dict)  # {symbol: {entry_price, quantity, side, ...}}
+    copied_positions: Dict[str, Dict] = field(default_factory=dict)  # [NEW] {symbol: {source, entry_price, quantity}}
     cumulative_realized_pnl: float = 0.0  # Total realized PnL from all closed trades
     
     # Account Failure Tracking

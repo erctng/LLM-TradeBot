@@ -144,6 +144,13 @@ class MultiAgentTradingBot:
         ai_token = os.environ.get('AI_TRADER_TOKEN', '')
         ai_sync_enabled = os.environ.get('ENABLE_AI_TRADER_SYNC', 'false').lower() in ('true', '1', 'yes')
         self.ai_trader_client = AITraderClient(token=ai_token if ai_sync_enabled else None)
+        
+        # 🔄 Start CopyTrade Poller
+        if self.ai_trader_client.enabled:
+            import threading
+            self._copytrade_thread = threading.Thread(target=self._copytrade_loop, daemon=True)
+            self._copytrade_thread.start()
+
         self.agent_provider.initialize(self.symbol_manager.symbols)
         
         # 🧠 DeepSeek 决策引擎
@@ -781,6 +788,84 @@ class MultiAgentTradingBot:
             log.error(f"Order execution failed: {e}", exc_info=True)
             return False
 
+    def _copytrade_loop(self):
+        """Background thread to poll AI-Trader for copy trades."""
+        import time
+        from src.server.state import global_state
+        
+        while global_state.is_running:
+            try:
+                if hasattr(self, 'ai_trader_client') and self.ai_trader_client.enabled:
+                    self.ai_trader_client.sync_copy_trades(self._copytrade_execution_callback)
+            except Exception as e:
+                log.error(f"CopyTrade Loop Error: {e}")
+            time.sleep(30)
+            
+    def _copytrade_execution_callback(self, action: str, symbol: str, quantity: float, reason: str):
+        """Execute a trade specifically requested by the CopyTrade sync process."""
+        current_price = global_state.current_price.get(symbol, 0)
+        if current_price <= 0:
+            # Fallback to fetch price if missing
+            ticker = self.client.get_ticker(symbol)
+            if ticker and 'lastPrice' in ticker:
+                current_price = float(ticker['lastPrice'])
+            else:
+                log.warning(f"⚠️ Cannot execute copy trade for {symbol}, price is unknown.")
+                return
+
+        # Calculate prudent default quantity if not provided or 0 (Option C)
+        if quantity <= 0:
+            if action.startswith("close"):
+                # Retrieve current position size
+                if self.trading_parameters.test_mode:
+                    pos = global_state.virtual_positions.get(symbol, {})
+                    quantity = pos.get('quantity', 0)
+                else:
+                    from src.utils.helper import get_current_position
+                    pos = get_current_position(self.client, symbol, False)
+                    quantity = pos.quantity if pos else 0
+                    
+                if quantity <= 0:
+                    log.warning(f"⚠️ Cannot close {symbol}, no open position found.")
+                    return
+            else:
+                quantity = self.trading_parameters.max_position_size / current_price
+
+        order_params = {
+            'action': action,
+            'quantity': quantity,
+            'leverage': self.trading_parameters.leverage,
+            'confidence': 100,
+            'reason': reason
+        }
+        
+        log.info(f"🚀 CopyTrade Triggered: {action} {symbol} (Qty: {quantity})")
+        
+        # Dispatch trade using existing wrappers
+        if action.startswith("open"):
+            self._execute_suggested_open_trade(symbol, {'order_params': order_params, 'current_price': current_price}, "cycle_copy")
+        else:
+            # For closing, just use raw execute order for live, and simulate for test
+            if self.trading_parameters.test_mode:
+                if symbol in global_state.virtual_positions:
+                    pos = global_state.virtual_positions[symbol]
+                    entry = pos.get('entry_price', 0)
+                    pnl = (current_price - entry) * quantity if pos.get('side') == 'LONG' else (entry - current_price) * quantity
+                    del global_state.virtual_positions[symbol]
+                    global_state.record_trade({
+                        'action': action.upper(),
+                        'symbol': symbol,
+                        'exit_price': current_price,
+                        'quantity': quantity,
+                        'pnl': pnl,
+                        'status': 'SIMULATED',
+                        'reason': reason
+                    })
+                    global_state.add_log(f"[🚀 EXECUTOR] Test: {action.upper()} {quantity} @ {current_price:.2f} (CopyTrade)")
+            else:
+                is_success = self._execute_order(order_params)
+                if is_success:
+                    global_state.add_log(f"[🚀 EXECUTOR] Live: {action.upper()} {quantity} => ✅ SENT (CopyTrade)")
 # ... locating where vote_result is processed to add semantic analysis
 
     def run_once(self) -> Dict:

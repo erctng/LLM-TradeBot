@@ -96,3 +96,93 @@ class AITraderClient:
                 
         except Exception as e:
             log.error(f"❌ AI-Trader Client Error: {e}")
+
+    def sync_copy_trades(self, execution_callback) -> None:
+        """
+        Poll AI-Trader platform for copied positions and sync state locally.
+        Should be called periodically (e.g., every 30s) in a background thread.
+        
+        Args:
+            execution_callback: Function to call to execute a trade locally.
+                                Signature: callback(action: str, symbol: str, quantity: float, reason: str)
+        """
+        if not self.enabled:
+            return
+            
+        from src.server.state import global_state
+        
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(
+                f"{self.BASE_URL}/positions",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                log.warning(f"⚠️ AI-Trader Sync Failed: HTTP {response.status_code}")
+                return
+                
+            data = response.json()
+            remote_positions = data.get("positions", [])
+            
+            # Filter only copied positions
+            copied_remote = {}
+            for pos in remote_positions:
+                source = pos.get("source", "")
+                if source.startswith("copied:"):
+                    # Treat AI-Trader symbol (e.g., BTC) as Binance symbol (e.g., BTCUSDT)
+                    symbol = pos.get("symbol", "")
+                    if "USDT" not in symbol and "BUSD" not in symbol:
+                        symbol += "USDT"
+                    copied_remote[symbol] = pos
+            
+            # Compare with local state
+            with global_state.locked():
+                local_copied = global_state.copied_positions
+                
+                # Check for NEW copied positions (open)
+                for symbol, pos in copied_remote.items():
+                    if symbol not in local_copied:
+                        log.info(f"🔄 CopyTrade: Detected new position for {symbol} from {pos.get('source')}")
+                        # In AI-Trader, quantity is > 0 for Long, < 0 for Short ? 
+                        # Actually, if side isn't provided, let's assume it's a LONG for now or infer from quantity.
+                        # Wait, the AI-Trader doc shows: { "symbol": "BTC", "quantity": 0.5, "entry_price": 50000, "current_price": 51000, "pnl": 500, "source": "copied:10" }
+                        # Let's assume quantity > 0 means Long, < 0 means Short, OR it only supports Longs for now.
+                        action = "open_long" if pos.get("quantity", 0) > 0 else "open_short"
+                        
+                        # We use the default bot quantity rules if we don't pass a specific quantity here,
+                        # but execution_callback requires it. We'll pass 0.0 to let the ExecutionEngine calculate it based on risk.
+                        execution_callback(
+                            action=action,
+                            symbol=symbol,
+                            quantity=0.0, # 0.0 means 'use default risk amount' (Option C)
+                            reason=f"CopyTrade {pos.get('source')}"
+                        )
+                        # Add to local state
+                        global_state.copied_positions[symbol] = pos
+                
+                # Check for CLOSED copied positions (close)
+                symbols_to_remove = []
+                for symbol, pos in local_copied.items():
+                    if symbol not in copied_remote:
+                        log.info(f"🔄 CopyTrade: Detected closed position for {symbol} from {pos.get('source')}")
+                        action = "close_long" if pos.get("quantity", 0) > 0 else "close_short"
+                        
+                        execution_callback(
+                            action=action,
+                            symbol=symbol,
+                            quantity=0.0, # Close entirely
+                            reason=f"CopyTrade Closed {pos.get('source')}"
+                        )
+                        symbols_to_remove.append(symbol)
+                        
+                for symbol in symbols_to_remove:
+                    del global_state.copied_positions[symbol]
+                    
+        except Exception as e:
+            log.error(f"❌ AI-Trader CopyTrade Sync Error: {e}")
