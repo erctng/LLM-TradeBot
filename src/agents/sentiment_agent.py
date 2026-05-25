@@ -52,7 +52,7 @@ class SentimentAgent:
             # Fetch recent signals from AI-Trader feed as "market intel"
             feed_data = ""
             try:
-                resp = requests.get("https://ai4trade.ai/api/signals/feed?limit=5", timeout=5)
+                resp = requests.get("https://ai4trade.ai/api/signals/feed?limit=5", timeout=10)
                 if resp.status_code == 200:
                     signals = resp.json().get('signals', [])
                     for s in signals:
