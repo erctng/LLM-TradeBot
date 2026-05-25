@@ -9,9 +9,8 @@ from typing import Dict, Optional
 from src.config import Config
 from src.utils.logger import log
 from src.llm import create_client, LLMConfig
-from src.agents.base_agent import BaseAgent
 
-class SentimentAgent(BaseAgent):
+class SentimentAgent:
     """
     Market Intelligence Agent
     
