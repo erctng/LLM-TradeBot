@@ -147,13 +147,20 @@ class ExecutionEngine:
             side='LONG'
         )
         
-        # Set stop loss and take profit
+        # Set take profit (and use trailing stop for SL)
         sl_tp_orders = self.client.set_stop_loss_take_profit(
             symbol=symbol,
-            stop_loss_price=stop_loss_price,
+            stop_loss_price=None, # Use trailing stop instead
             take_profit_price=take_profit_price,
             position_side='LONG'  # Explicitly specify long position
         )
+        ts_order = self.client.place_futures_trailing_stop(
+            symbol=symbol,
+            callback_rate=2.0,
+            position_side='LONG'
+        )
+        if ts_order:
+            sl_tp_orders.append(ts_order)
         
         log.executor(f"Open long position successful: {quantity} {symbol} @ {entry_price}")
         
@@ -213,10 +220,17 @@ class ExecutionEngine:
         
         sl_tp_orders = self.client.set_stop_loss_take_profit(
             symbol=symbol,
-            stop_loss_price=stop_loss_price,
+            stop_loss_price=None, # Use trailing stop instead
             take_profit_price=take_profit_price,
             position_side='SHORT'  # Explicitly specify short position
         )
+        ts_order = self.client.place_futures_trailing_stop(
+            symbol=symbol,
+            callback_rate=2.0,
+            position_side='SHORT'
+        )
+        if ts_order:
+            sl_tp_orders.append(ts_order)
         
         log.executor(f"Open short position successful: {quantity} {symbol} @ {entry_price}")
         

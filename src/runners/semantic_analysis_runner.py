@@ -44,6 +44,7 @@ class SemanticAnalysisRunner:
         use_trend = use_trend_llm or use_trend_local
         use_setup = use_setup_llm or use_setup_local
         use_trigger = use_trigger_llm or use_trigger_local
+        use_sentiment = True # Always run Sentiment Agent
 
         if use_trend and use_trend_llm and use_trend_local:
             log.info("⚠️ Both TrendAgentLLM and TrendAgent enabled; using LLM version only")
@@ -52,7 +53,7 @@ class SemanticAnalysisRunner:
         if use_trigger and use_trigger_llm and use_trigger_local:
             log.info("⚠️ Both TriggerAgentLLM and TriggerAgent enabled; using LLM version only")
 
-        if not (use_trend or use_setup or use_trigger):
+        if not (use_trend or use_setup or use_trigger or use_sentiment):
             global_state.semantic_analyses = {}
             return {}
 
@@ -106,6 +107,9 @@ class SemanticAnalysisRunner:
 
             if use_trigger:
                 tasks['trigger'] = loop.run_in_executor(None, self.agent_provider.trigger_agent.analyze, trigger_data)
+                
+            if use_sentiment:
+                tasks['sentiment'] = loop.run_in_executor(None, self.agent_provider.sentiment_agent.analyze, {'symbol': context.symbol})
 
             analyses: Dict[str, Any] = {}
             if tasks:
@@ -132,7 +136,8 @@ class SemanticAnalysisRunner:
                 trend_mark = '✓' if analyses.get('trend') else '○'
                 setup_mark = '✓' if analyses.get('setup') else '○'
                 trigger_mark = '✓' if analyses.get('trigger') else '○'
-                global_state.add_log(f"[⚖️ CRITIC] 4-Layer Analysis: Trend={trend_mark} | Setup={setup_mark} | Trigger={trigger_mark}")
+                sentiment_mark = '✓' if analyses.get('sentiment') else '○'
+                global_state.add_log(f"[⚖️ CRITIC] 4-Layer Analysis: Trend={trend_mark} | Setup={setup_mark} | Trigger={trigger_mark} | Sentiment={sentiment_mark}")
 
                 trend_result = analyses.get('trend')
                 if isinstance(trend_result, dict):
@@ -165,6 +170,16 @@ class SemanticAnalysisRunner:
                         f"RVOL: {meta.get('rvol', 'N/A')}x"
                     )
                     global_state.add_agent_message("trigger_agent", summary, level="info")
+                    
+                sentiment_result = analyses.get('sentiment')
+                if isinstance(sentiment_result, dict):
+                    meta = sentiment_result.get('metadata', {}) or {}
+                    summary = (
+                        f"Stance: {sentiment_result.get('stance', 'UNKNOWN')} | "
+                        f"Source: {meta.get('source', 'UNKNOWN')} | "
+                        f"Detail: {sentiment_result.get('analysis', '')[:50]}..."
+                    )
+                    global_state.add_agent_message("sentiment_agent", summary, level="info")
 
             emit_global_runtime_event(
                 context,

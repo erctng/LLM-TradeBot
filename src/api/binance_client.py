@@ -457,6 +457,42 @@ class BinanceClient:
         except BinanceAPIException as e:
             log.error(f"Failed to set SL/TP: {e}")
             raise
+            
+    def place_futures_trailing_stop(
+        self,
+        symbol: str,
+        callback_rate: float = 2.0,
+        activation_price: Optional[float] = None,
+        position_side: str = 'LONG'
+    ) -> Optional[Dict]:
+        """
+        Place a trailing stop order for an open position.
+        """
+        try:
+            position = self.get_futures_position(symbol)
+            if not position or position['position_amt'] == 0:
+                log.warning("No position, cannot set Trailing Stop")
+                return None
+                
+            side = 'SELL' if position['position_amt'] > 0 else 'BUY'
+            
+            params = {
+                "symbol": symbol,
+                "side": side,
+                "type": "TRAILING_STOP_MARKET",
+                "callbackRate": callback_rate,
+                "closePosition": "true",
+                "positionSide": position_side
+            }
+            if activation_price:
+                params["activationPrice"] = activation_price
+                
+            ts_order = self.client.futures_create_order(**params)
+            log.info(f"Trailing Stop set for {symbol} at callback {callback_rate}% (positionSide={position_side})")
+            return ts_order
+        except BinanceAPIException as e:
+            log.error(f"Failed to set Trailing Stop: {e}")
+            raise
     
     def cancel_all_orders(self, symbol: str) -> Dict:
         """取消所有订单"""

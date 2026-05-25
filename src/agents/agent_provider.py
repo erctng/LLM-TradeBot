@@ -18,6 +18,8 @@ from .trend import TrendAgentLLM, TrendAgentNoLLM
 from .setup import SetupAgentLLM, SetupAgentNoLLM
 from .trigger import TriggerAgentLLM, TriggerAgentNoLLM
 
+from .sentiment_agent import SentimentAgent
+
 class AgentProvider:
     def __init__(
         self,
@@ -40,6 +42,7 @@ class AgentProvider:
         self.multi_period_agent = MultiPeriodParserAgent()
         self.decision_core = DecisionCoreAgent()
         self.symbol_selector_agent = SymbolSelectorAgent()
+        self.sentiment_agent = SentimentAgent(self.config)
 
         # Lazy-initialized agents (set by _set_agents / initialize)
         self.reflection_agent = None

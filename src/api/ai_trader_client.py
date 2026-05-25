@@ -135,6 +135,12 @@ class AITraderClient:
             for pos in remote_positions:
                 source = pos.get("source", "")
                 if source.startswith("copied:"):
+                    # Phase 0: Restrict to Crypto markets only
+                    market_type = pos.get("market", "crypto").lower()
+                    if market_type != "crypto" and market_type != "":
+                        log.debug(f"⚠️ CopyTrade: Ignored non-crypto position {pos.get('symbol')} (Market: {market_type})")
+                        continue
+
                     # Treat AI-Trader symbol (e.g., BTC) as Binance symbol (e.g., BTCUSDT)
                     symbol = pos.get("symbol", "")
                     if "USDT" not in symbol and "BUSD" not in symbol:

@@ -530,6 +530,9 @@ class DecisionStageRunner:
         if self.agent_config.trigger_agent_llm or self.agent_config.trigger_agent_local:
             if 'trigger' in semantic:
                 outputs['trigger_agent'] = semantic.get('trigger')
+                
+        if 'sentiment' in semantic:
+            outputs['sentiment_agent'] = semantic.get('sentiment')
 
         if self.agent_config.reflection_agent_llm or self.agent_config.reflection_agent_local:
             outputs['reflection_agent'] = {

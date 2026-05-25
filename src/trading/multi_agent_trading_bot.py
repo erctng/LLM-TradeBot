@@ -778,8 +778,13 @@ class MultiAgentTradingBot:
                 self.execution_engine.set_stop_loss_take_profit(
                     symbol=self.symbol_manager.current_symbol,
                     position_side='LONG' if action == 'open_long' else 'SHORT',
-                    stop_loss=order_params['stop_loss'],
-                    take_profit=order_params['take_profit']
+                    stop_loss=None, # Use Trailing Stop instead
+                    take_profit=order_params.get('take_profit')
+                )
+                self.client.place_futures_trailing_stop(
+                    symbol=self.symbol_manager.current_symbol,
+                    callback_rate=2.0,
+                    position_side='LONG' if action == 'open_long' else 'SHORT'
                 )
             
             return True
@@ -837,6 +842,38 @@ class MultiAgentTradingBot:
                     return
             else:
                 quantity = self.trading_parameters.max_position_size / current_price
+
+        # Smart Copy-Trading (AI Veto - Level 1 Flexible)
+        if action.startswith("open"):
+            semantic = getattr(global_state, 'semantic_analyses', {}) or {}
+            
+            # Trend Check
+            trend = semantic.get('trend', {})
+            trend_stance = trend.get('stance', 'UNKNOWN')
+            trend_strength = str(trend.get('metadata', {}).get('strength', 'weak')).lower()
+            
+            # Sentiment Check
+            sentiment = semantic.get('sentiment', {})
+            sentiment_stance = sentiment.get('stance', 'UNKNOWN')
+            
+            vetoed = False
+            veto_reason = ""
+            
+            if action == 'open_long':
+                if trend_stance == 'DOWNTREND' and trend_strength == 'strong':
+                    vetoed, veto_reason = True, "AI Trend Agent detects STRONG DOWNTREND (VETO LONG)"
+                elif sentiment_stance == 'BEARISH':
+                    vetoed, veto_reason = True, "AI Sentiment Agent detects BEARISH Market (VETO LONG)"
+            elif action == 'open_short':
+                if trend_stance == 'UPTREND' and trend_strength == 'strong':
+                    vetoed, veto_reason = True, "AI Trend Agent detects STRONG UPTREND (VETO SHORT)"
+                elif sentiment_stance == 'BULLISH':
+                    vetoed, veto_reason = True, "AI Sentiment Agent detects BULLISH Market (VETO SHORT)"
+                    
+            if vetoed:
+                log.warning(f"🛡️ Smart Copy-Trading: VETO Triggered for {symbol} {action} - {veto_reason}")
+                global_state.add_log(f"[🛡️ AI VETO] Blocked CopyTrade {action} on {symbol}: {veto_reason}")
+                return
 
         order_params = {
             'action': action,
@@ -1409,32 +1446,74 @@ class MultiAgentTradingBot:
     def _update_virtual_account_stats(self, latest_prices: Dict[str, float]):
         """
         [Test Mode] 更新虚拟账户统计 (权益、PnL) 并推送到 Global State
+        Also handles Trailing Stop Loss execution in Test Mode.
         """
         if not self.trading_parameters.test_mode:
             return
 
         total_unrealized_pnl = 0.0
+        symbols_to_close = []
         
         # 遍历持仓计算未实现盈亏
-        for symbol, pos in global_state.virtual_positions.items():
+        for symbol, pos in list(global_state.virtual_positions.items()):
             current_price = latest_prices.get(symbol)
             if not current_price:
-                 # Fallback to stored price if current not available
                  current_price = pos.get('current_price', pos['entry_price'])
                 
             entry_price = pos['entry_price']
             quantity = pos['quantity']
             side = pos['side']  # LONG or SHORT
             
-            # PnL Calc
+            # Trailing Stop & Take Profit Logic (Simulated)
+            callback_rate = 0.02 # 2% trailing stop
+            is_closed = False
+            
             if side.upper() == 'LONG':
                 pnl = (current_price - entry_price) * quantity
+                # Update Trailing Stop
+                new_sl = current_price * (1 - callback_rate)
+                if new_sl > pos.get('stop_loss', 0):
+                    pos['stop_loss'] = new_sl
+                # Check hit
+                if current_price <= pos.get('stop_loss', 0):
+                    is_closed = True
+                if pos.get('take_profit') and current_price >= pos['take_profit']:
+                    is_closed = True
             else:
                 pnl = (entry_price - current_price) * quantity
+                # Update Trailing Stop
+                new_sl = current_price * (1 + callback_rate)
+                if pos.get('stop_loss', float('inf')) == 0: pos['stop_loss'] = float('inf')
+                if new_sl < pos.get('stop_loss', float('inf')):
+                    pos['stop_loss'] = new_sl
+                # Check hit
+                if current_price >= pos.get('stop_loss', float('inf')):
+                    is_closed = True
+                if pos.get('take_profit') and current_price <= pos['take_profit']:
+                    is_closed = True
+                    
+            if is_closed:
+                symbols_to_close.append((symbol, pnl))
+                continue
                 
             pos['unrealized_pnl'] = pnl
             pos['current_price'] = current_price
             total_unrealized_pnl += pnl
+
+        # Execute Virtual Closures
+        for symbol, pnl in symbols_to_close:
+            pos = global_state.virtual_positions.pop(symbol)
+            global_state.virtual_balance += pnl
+            global_state.record_trade({
+                'action': 'CLOSE_' + pos['side'].upper(),
+                'symbol': symbol,
+                'exit_price': latest_prices.get(symbol, pos['entry_price']),
+                'quantity': pos['quantity'],
+                'pnl': pnl,
+                'status': 'SIMULATED',
+                'reason': 'Trailing Stop / Take Profit Hit'
+            })
+            global_state.add_log(f"[🚀 EXECUTOR] Test: Hit SL/TP for {symbol}, PnL: {pnl:.2f}")
 
         # 更新权益
         # Equity = Balance (Realized) + Unrealized PnL
