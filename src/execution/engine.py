@@ -298,14 +298,16 @@ class ExecutionEngine:
         
         # Close position
         side = 'SELL' if position_amt > 0 else 'BUY'
+        position_side = 'LONG' if position_amt > 0 else 'SHORT'
         quantity = abs(position_amt)
         
-        log.executor(f"Start executing close position: {side} {quantity} {symbol}")
+        log.executor(f"Start executing close position: {side} {quantity} {symbol} ({position_side})")
         
         order = self.client.place_market_order(
             symbol=symbol,
             side=side,
             quantity=quantity,
+            position_side=position_side,
             reduce_only=True
         )
         
@@ -358,11 +360,13 @@ class ExecutionEngine:
         # Reduce position by half
         reduce_qty = abs(position_amt) * 0.5
         side = 'SELL' if position_amt > 0 else 'BUY'
+        position_side = 'LONG' if position_amt > 0 else 'SHORT'
         
         order = self.client.place_market_order(
             symbol=symbol,
             side=side,
             quantity=reduce_qty,
+            position_side=position_side,
             reduce_only=True
         )
         

@@ -756,18 +756,23 @@ class MultiAgentTradingBot:
             # 市价开仓
             if action == 'open_long':
                 side = 'BUY'
+                pos_side = 'LONG'
             elif action == 'open_short':
                 side = 'SELL'
+                pos_side = 'SHORT'
             elif action == 'close_long':
                 side = 'SELL'
+                pos_side = 'LONG'
             elif action == 'close_short':
                 side = 'BUY'
+                pos_side = 'SHORT'
             else:
                 return False
             order = self.client.place_futures_market_order(
                 symbol=self.symbol_manager.current_symbol,
                 side=side,
-                quantity=order_params['quantity']
+                quantity=order_params['quantity'],
+                position_side=pos_side
             )
             
             if not order:
@@ -849,11 +854,13 @@ class MultiAgentTradingBot:
             
             # Trend Check
             trend = semantic.get('trend', {})
+            if isinstance(trend, str): trend = {} # Fallback
             trend_stance = trend.get('stance', 'UNKNOWN')
             trend_strength = str(trend.get('metadata', {}).get('strength', 'weak')).lower()
             
             # Sentiment Check
             sentiment = semantic.get('sentiment', {})
+            if isinstance(sentiment, str): sentiment = {} # Fallback
             sentiment_stance = sentiment.get('stance', 'UNKNOWN')
             
             vetoed = False
@@ -1472,10 +1479,11 @@ class MultiAgentTradingBot:
                 pnl = (current_price - entry_price) * quantity
                 # Update Trailing Stop
                 new_sl = current_price * (1 - callback_rate)
-                if new_sl > pos.get('stop_loss', 0):
+                current_sl = pos.get('stop_loss') or 0
+                if new_sl > current_sl:
                     pos['stop_loss'] = new_sl
                 # Check hit
-                if current_price <= pos.get('stop_loss', 0):
+                if current_price <= (pos.get('stop_loss') or 0):
                     is_closed = True
                 if pos.get('take_profit') and current_price >= pos['take_profit']:
                     is_closed = True
@@ -1483,11 +1491,11 @@ class MultiAgentTradingBot:
                 pnl = (entry_price - current_price) * quantity
                 # Update Trailing Stop
                 new_sl = current_price * (1 + callback_rate)
-                if pos.get('stop_loss', float('inf')) == 0: pos['stop_loss'] = float('inf')
-                if new_sl < pos.get('stop_loss', float('inf')):
+                current_sl = pos.get('stop_loss') or float('inf')
+                if new_sl < current_sl:
                     pos['stop_loss'] = new_sl
                 # Check hit
-                if current_price >= pos.get('stop_loss', float('inf')):
+                if current_price >= (pos.get('stop_loss') or float('inf')):
                     is_closed = True
                 if pos.get('take_profit') and current_price <= pos['take_profit']:
                     is_closed = True

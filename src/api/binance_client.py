@@ -469,12 +469,16 @@ class BinanceClient:
         Place a trailing stop order for an open position.
         """
         try:
-            position = self.get_futures_position(symbol)
-            if not position or position['position_amt'] == 0:
-                log.warning("No position, cannot set Trailing Stop")
-                return None
-                
-            side = 'SELL' if position['position_amt'] > 0 else 'BUY'
+            if position_side == 'LONG':
+                side = 'SELL'
+            elif position_side == 'SHORT':
+                side = 'BUY'
+            else:
+                position = self.get_futures_position(symbol)
+                if not position or position['position_amt'] == 0:
+                    log.warning("No position, cannot set Trailing Stop")
+                    return None
+                side = 'SELL' if position['position_amt'] > 0 else 'BUY'
             
             params = {
                 "symbol": symbol,
