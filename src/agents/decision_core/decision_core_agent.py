@@ -491,10 +491,10 @@ class DecisionCoreAgent:
                 size_multiplier *= 1.2
                 tp_multiplier *= 1.5  # 趋势中让利润奔跑
             elif regime_type in ['choppy', 'volatile_directionless', 'ranging']:
-                # Phase 4: 震荡市均值回归 - 窄止损止盈，快进快出
+                # Volatility Sniper: Give the trade breathing room
                 size_multiplier *= 0.7  # 适中仓位
-                sl_multiplier *= 0.5    # 止损收窄到 0.75% (1.5% * 0.5)
-                tp_multiplier *= 0.4    # 止盈收窄到 1.2% (3.0% * 0.4)
+                sl_multiplier *= 1.2    # 止损放宽到 1.8% (1.5% * 1.2) - 避免被扫损
+                tp_multiplier *= 1.0    # 止盈收窄到 3.0% (3.0% * 1.0)
         
         # 根据价格位置调整
         if position:
@@ -651,9 +651,9 @@ class DecisionCoreAgent:
                 long_threshold = 22
                 short_threshold = 32
             elif regime_type in ['volatile_directionless', 'choppy']:
-                # 震荡市：提高两边阈值，减少交易 (Phase 2 Tuned: 35 -> 30)
-                long_threshold = 30
-                short_threshold = 30
+                # Volatility Sniper: Lower thresholds to 8 to allow qualitative filters (LLM) to catch sweeps
+                long_threshold = 8
+                short_threshold = 8
             elif regime_type in ['volatile_trending']:
                 # 波动趋势：中等阈值
                 long_threshold = 25

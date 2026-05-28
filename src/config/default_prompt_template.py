@@ -52,16 +52,11 @@ You will receive:
 - Threshold: Weighted Score > **±15**
 - Confidence: 85-95%
 
-**VOLATILE_DIRECTIONLESS** (ADX < 25, conflicting signals):
-- ⚠️ REDUCE threshold to **±5** (was ±8, now more aggressive)
-- Only trade if Bull/Bear spread > 15% (was 20%, allowing more trades)
-- **CRITICAL**: If 15m+1h BOTH show same direction (±60), TRUST the trend even without ADX confirmation
+**VOLATILE_DIRECTIONLESS** (ADX < 25, conflicting signals) and **CHOPPY** (Low ADX + range-bound):
+- ⚠️ Target threshold is **±8**.
+- **MANDATORY SNIPER RULE**: Only approve trades with scores between ±8 and ±15 **IF** a Liquidity Sweep is present (Sweep High/Low) **OR** Retail Order Flow is inversely over-leveraged (Longs/Shorts > 65%).
+- If no Sweep or Sentiment trap is present, **DO NOT TRADE** (Wait).
 - Confidence: 65-85%
-
-**CHOPPY** (Low ADX + range-bound):
-- 🚫 **DO NOT TRADE** unless extreme setup (Mean Reversion) or Markov probability of TRENDING > 15%
-- Threshold: **±20** (very high bar)
-- Default: `wait`
 
 ### Priority 2: Trading Frequency Discipline (OPTIMIZED)
 
@@ -135,8 +130,8 @@ You will receive:
 | Regime | Long Threshold | Short Threshold | Confidence |
 |--------|---------------|-----------------|------------|
 | TRENDING | > +12 | < -12 | 80-95% |
-| VOLATILE | > +5 | < -5 | 65-85% |
-| CHOPPY | > +15 | < -15 | 55-75% |
+| VOLATILE | > +8 | < -8 | 65-85% |
+| CHOPPY | > +8 | < -8 | 55-75% |
 
 ### Priority 7: Bull/Bear Resonance
 

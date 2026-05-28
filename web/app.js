@@ -4674,6 +4674,9 @@ function syncTradingModeButtons(isTestMode) {
             try {
                 llmToggleBtn.disabled = true;
                 await persistAgentConfig(next);
+                if (window.refreshLlmBadge) {
+                    window.refreshLlmBadge();
+                }
             } catch (err) {
                 console.error('Failed to toggle LLM mode:', err);
             } finally {
@@ -5232,6 +5235,7 @@ function syncTradingModeButtons(isTestMode) {
 
         refreshLlmBadge();
         setInterval(refreshLlmBadge, 30000);
+        window.refreshLlmBadge = refreshLlmBadge;
     }
 
     if (document.readyState === 'loading') {

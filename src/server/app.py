@@ -830,6 +830,8 @@ async def update_agent_config(data: dict = Body(...), authenticated: bool = Depe
 
     if not agents or not isinstance(agents, dict):
         raise HTTPException(status_code=400, detail="No agent configuration provided")
+        
+    print(f"[DEBUG] INCOMING AGENTS PAYLOAD: {agents}", flush=True)
 
     # Filter/normalize keys and merge with persisted defaults
     from src.agents.agent_config import AgentConfig
@@ -846,6 +848,9 @@ async def update_agent_config(data: dict = Body(...), authenticated: bool = Depe
     global_state.agent_config = normalized
     # Persist to config.yaml for next restart and export env flags
     config_manager._update_agents_config(normalized)
+    
+    # Notify the trading engine to reload its configuration dynamically
+    global_state.config_changed = True
     
     # Log the change
     enabled = [k for k, v in normalized.items() if v]
