@@ -49,21 +49,30 @@ class SentimentAgent:
         """
         try:
             symbol = data.get('symbol', 'BTCUSDT')
-            # Fetch recent signals from AI-Trader feed as "market intel"
             feed_data = ""
+            
+            ls_ratio = data.get('ls_ratio')
+            if ls_ratio:
+                long_pct = ls_ratio.get('long_account', 0) * 100
+                short_pct = ls_ratio.get('short_account', 0) * 100
+                ratio = ls_ratio.get('long_short_ratio', 1.0)
+                feed_data += f"[Order Flow] Retail Sentiment - Longs: {long_pct:.1f}%, Shorts: {short_pct:.1f}%, Ratio: {ratio}\n"
+                feed_data += f"If Longs > 65%, the market is over-leveraged long (bearish signal, risk of long squeeze).\n"
+                feed_data += f"If Shorts > 65%, the market is over-leveraged short (bullish signal, risk of short squeeze).\n\n"
+            
             try:
-                resp = requests.get("https://ai4trade.ai/api/signals/feed?limit=5", timeout=10)
+                resp = requests.get("https://ai4trade.ai/api/signals/feed?limit=3", timeout=3)
                 if resp.status_code == 200:
                     signals = resp.json().get('signals', [])
                     for s in signals:
-                        feed_data += f"- {s.get('agent_name')} (PnL: {s.get('agent_pnl', 0)}): {s.get('content')}\n"
+                        feed_data += f"- {s.get('agent_name')}: {s.get('content')}\n"
             except Exception as e:
-                log.warning(f"Failed to fetch market intel: {e}")
+                log.debug(f"AI feed unavailable: {e}")
                 
             if not feed_data:
-                feed_data = "No recent market intelligence available."
+                feed_data = "No recent market intelligence or order flow data available."
                 
-            prompt = f"Analyze the following recent market intelligence and trading strategies from top experts:\n\n{feed_data}\n\nWhat is the overall sentiment for {symbol}?\nOutput ONLY a JSON format with 'stance' (BULLISH/BEARISH/NEUTRAL) and 'reasoning' (1 sentence)."
+            prompt = f"Analyze the following market intelligence and order flow for {symbol}:\n\n{feed_data}\n\nWhat is the overall sentiment? Output ONLY a JSON with 'stance' (BULLISH/BEARISH/NEUTRAL) and 'reasoning' (1 sentence)."
             
             response = self.client.chat(
                 system_prompt="You are a market sentiment analyst.",

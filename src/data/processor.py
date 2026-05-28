@@ -174,6 +174,8 @@ class MarketDataProcessor:
             'volume_change_pct': 0.0,
             'atr_pct': float(latest.get('atr', 0)) / float(latest['close']) * 100 if latest['close'] != 0 else 0,
             'key_levels': self.find_support_resistance(df),
+            'sweep_high': bool(latest.get('is_sweep_high', False)),
+            'sweep_low': bool(latest.get('is_sweep_low', False)),
             'snapshot_id': latest.get('snapshot_id', 'unknown'),
             'indicator_completeness': self.check_indicator_completeness(df)
         }
@@ -235,6 +237,23 @@ class MarketDataProcessor:
             (df['bb_upper'] - df['bb_lower']) / df['bb_middle'],
             np.nan
         )
+        
+        # 🆕 Volatility Sweep Detection (Liquidity Hunts)
+        # Body bounds
+        df['body_top'] = df[['open', 'close']].max(axis=1)
+        df['body_bottom'] = df[['open', 'close']].min(axis=1)
+        df['body_size'] = df['body_top'] - df['body_bottom']
+        
+        # Upper Wick Sweep (Bearish)
+        df['upper_wick'] = df['high'] - df['body_top']
+        df['is_sweep_high'] = (df['high'] > df['bb_upper']) & (df['body_top'] < df['bb_upper']) & (df['upper_wick'] > df['body_size'])
+        
+        # Lower Wick Sweep (Bullish)
+        df['lower_wick'] = df['body_bottom'] - df['low']
+        df['is_sweep_low'] = (df['low'] < df['bb_lower']) & (df['body_bottom'] > df['bb_lower']) & (df['lower_wick'] > df['body_size'])
+        
+        # Clean up temp columns
+        df.drop(['body_top', 'body_bottom', 'body_size', 'upper_wick', 'lower_wick'], axis=1, inplace=True)
         
         # 🆕 KDJ Indicator (Specification requirement for 15m setup)
         # Parameters: N=9, M1=3, M2=3

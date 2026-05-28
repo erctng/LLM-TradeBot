@@ -18,9 +18,15 @@ def _compute_trigger_signals(data: Dict) -> Dict[str, Optional[float]]:
     rvol = data.get('rvol') or data.get('trigger_rvol', 1.0)
     volume_breakout = data.get('volume_breakout', False)
 
+    sweep_high = data.get('sweep_high', False)
+    sweep_low = data.get('sweep_low', False)
+
     if pattern and pattern != 'None':
         stance = 'CONFIRMED'
         status = 'PATTERN_DETECTED'
+    elif sweep_high or sweep_low:
+        stance = 'CONFIRMED'
+        status = 'LIQUIDITY_SWEEP'
     elif volume_breakout or rvol > 1.0:
         stance = 'VOLUME_SIGNAL'
         status = 'BREAKOUT'
@@ -33,7 +39,9 @@ def _compute_trigger_signals(data: Dict) -> Dict[str, Optional[float]]:
         'status': status,
         'pattern': pattern if pattern and pattern != 'None' else 'NONE',
         'rvol': rvol,
-        'volume_breakout': volume_breakout
+        'volume_breakout': volume_breakout,
+        'sweep_high': sweep_high,
+        'sweep_low': sweep_low
     }
 
 
@@ -145,7 +153,7 @@ class TriggerAgentLLM:
         return """You are a professional crypto trigger analyst. Your task is to analyze 5m timeframe data and assess entry triggers using candlestick patterns and volume.
 
 Output format: 2-3 sentences covering:
-1. Pattern detection status (engulfing, volume breakout, or none)
+1. Pattern detection status (engulfing, volume breakout, liquidity sweep, or none)
 2. Volume analysis (RVOL status)
 3. Trigger confirmation (confirmed or waiting)
 4. Specific action recommendation
@@ -160,10 +168,16 @@ Do NOT use markdown formatting. Output plain text only."""
         pattern_type = data.get('pattern_type', '')
         rvol = data.get('rvol') or data.get('trigger_rvol', 1.0)
         volume_breakout = data.get('volume_breakout', False)
+        sweep_high = data.get('sweep_high', False)
+        sweep_low = data.get('sweep_low', False)
         trend = data.get('trend_direction', 'neutral')
         
         # Pattern status
-        if pattern and pattern != 'None':
+        if sweep_high:
+            pattern_status = "DETECTED: SWEEP_HIGH (Bearish Liquidity Hunt)"
+        elif sweep_low:
+            pattern_status = "DETECTED: SWEEP_LOW (Bullish Liquidity Hunt)"
+        elif pattern and pattern != 'None':
             pattern_status = f"DETECTED: {pattern_type or pattern}"
         else:
             pattern_status = "NO PATTERN DETECTED"
@@ -196,7 +210,7 @@ Volume Analysis:
 - Volume Breakout: {breakout_status}
 
 Trigger Requirement:
-- Need engulfing pattern OR volume breakout (RVOL > 1.5x + price breakout)
+- Need engulfing pattern, liquidity sweep (SWEEP_HIGH/LOW), OR volume breakout (RVOL > 1.5x + price breakout)
 
 Provide a 2-3 sentence semantic analysis of the trigger situation."""
 

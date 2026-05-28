@@ -812,6 +812,7 @@ class DecisionCoreAgent:
 - 信心度: {vote_result.regime.get('confidence', 0):.1f}%
 - ADX: {vote_result.regime.get('adx', 0):.1f}
 - 判定: {vote_result.regime.get('reason', 'N/A')}
+- 状态转移概率 (Markov): {json.dumps(vote_result.regime.get('markov_probabilities', {}), indent=2)}
 
 **决策原因**: {vote_result.reason}
 

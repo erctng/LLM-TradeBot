@@ -21,6 +21,60 @@ class MarketRegime(Enum):
     UNKNOWN = "unknown"               # 无法判断
 
 
+# 经验马尔可夫转移矩阵 (Empirical Markov Transition Matrix)
+# 表示从当前状态转移到下一个状态的先验概率
+MARKOV_TRANSITION_MATRIX = {
+    MarketRegime.TRENDING_UP: {
+        MarketRegime.TRENDING_UP: 0.60,
+        MarketRegime.CHOPPY: 0.25,
+        MarketRegime.VOLATILE: 0.10,
+        MarketRegime.TRENDING_DOWN: 0.05,
+        MarketRegime.VOLATILE_DIRECTIONLESS: 0.0,
+        MarketRegime.UNKNOWN: 0.0
+    },
+    MarketRegime.TRENDING_DOWN: {
+        MarketRegime.TRENDING_DOWN: 0.60,
+        MarketRegime.CHOPPY: 0.25,
+        MarketRegime.VOLATILE: 0.10,
+        MarketRegime.TRENDING_UP: 0.05,
+        MarketRegime.VOLATILE_DIRECTIONLESS: 0.0,
+        MarketRegime.UNKNOWN: 0.0
+    },
+    MarketRegime.CHOPPY: {
+        MarketRegime.CHOPPY: 0.70,
+        MarketRegime.TRENDING_UP: 0.10,
+        MarketRegime.TRENDING_DOWN: 0.10,
+        MarketRegime.VOLATILE: 0.05,
+        MarketRegime.VOLATILE_DIRECTIONLESS: 0.05,
+        MarketRegime.UNKNOWN: 0.0
+    },
+    MarketRegime.VOLATILE: {
+        MarketRegime.VOLATILE: 0.40,
+        MarketRegime.VOLATILE_DIRECTIONLESS: 0.30,
+        MarketRegime.CHOPPY: 0.20,
+        MarketRegime.TRENDING_UP: 0.05,
+        MarketRegime.TRENDING_DOWN: 0.05,
+        MarketRegime.UNKNOWN: 0.0
+    },
+    MarketRegime.VOLATILE_DIRECTIONLESS: {
+        MarketRegime.VOLATILE_DIRECTIONLESS: 0.50,
+        MarketRegime.CHOPPY: 0.30,
+        MarketRegime.VOLATILE: 0.20,
+        MarketRegime.TRENDING_UP: 0.0,
+        MarketRegime.TRENDING_DOWN: 0.0,
+        MarketRegime.UNKNOWN: 0.0
+    },
+    MarketRegime.UNKNOWN: {
+        MarketRegime.UNKNOWN: 1.0,
+        MarketRegime.TRENDING_UP: 0.0,
+        MarketRegime.TRENDING_DOWN: 0.0,
+        MarketRegime.CHOPPY: 0.0,
+        MarketRegime.VOLATILE: 0.0,
+        MarketRegime.VOLATILE_DIRECTIONLESS: 0.0
+    }
+}
+
+
 class RegimeDetector:
     """
     市场状态检测器
@@ -109,6 +163,9 @@ class RegimeDetector:
         if regime == MarketRegime.CHOPPY:
             choppy_analysis = self._analyze_choppy_market(df, bb_width_pct)
         
+        # 7. Markov Chain Probabilities for next regime
+        markov_probs = {k.value: v for k, v in MARKOV_TRANSITION_MATRIX.get(regime, MARKOV_TRANSITION_MATRIX[MarketRegime.UNKNOWN]).items()}
+        
         return {
             'regime': regime.value,
             'confidence': confidence,
@@ -118,7 +175,8 @@ class RegimeDetector:
             'trend_direction': trend_direction,
             'reason': reason,
             'position': self._calculate_price_position(df),
-            'choppy_analysis': choppy_analysis  # 🆕 CHOPPY-specific insights
+            'choppy_analysis': choppy_analysis,  # 🆕 CHOPPY-specific insights
+            'markov_probabilities': markov_probs # 🆕 Markov chain predictions
         }
     
     def _get_or_calculate_adx(self, df: pd.DataFrame) -> float:

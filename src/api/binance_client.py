@@ -10,6 +10,7 @@ from datetime import datetime
 from src.config import config
 from src.utils.logger import log
 from src.server.state import global_state
+import requests
 
 
 class BinanceClient:
@@ -520,6 +521,7 @@ class BinanceClient:
             orderbook = self.get_orderbook(symbol)
             funding = self.get_funding_rate(symbol)
             oi = self.get_open_interest(symbol)
+            ls_ratio = self.get_long_short_ratio(symbol)
             
             # 合约账户信息（需要认证，如果失败则返回空）
             account = None
@@ -540,6 +542,7 @@ class BinanceClient:
                 'orderbook': orderbook,
                 'funding': funding,
                 'oi': oi,
+                'ls_ratio': ls_ratio,
                 'account': account,
                 'position': position,
                 'account_error': account_error  # 传递错误信息
@@ -623,3 +626,26 @@ class BinanceClient:
             return equity if equity > 0 else float(wallet)
         except Exception:
             return 0.0
+
+    def get_long_short_ratio(self, symbol: str, period: str = "5m") -> Optional[Dict]:
+        """获取合约的多空比例 (Long/Short Ratio)"""
+        if self.test_mode:
+            return None
+            
+        try:
+            url = f"https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol={symbol}&period={period}&limit=1"
+            res = requests.get(url, timeout=10)
+            data = res.json()
+            if data and isinstance(data, list) and len(data) > 0:
+                item = data[0]
+                return {
+                    'symbol': item['symbol'],
+                    'long_account': float(item['longAccount']),
+                    'short_account': float(item['shortAccount']),
+                    'long_short_ratio': float(item['longShortRatio']),
+                    'timestamp': item['timestamp']
+                }
+            return None
+        except Exception as e:
+            log.warning(f"Failed to get long/short ratio for {symbol}: {e}")
+            return None
