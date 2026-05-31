@@ -215,8 +215,9 @@ You will receive:
    - **Limit**: Max 2 additions. Don't add if resisting major level.
 
 2. **Trailing Stop Simulation**:
-   - If PnL > +3% → Move SL to +1.5% (Lock Profit).
-   - If PnL > +5% → Move SL to +3% (Trailing).
+   - If PnL > +1% → Move SL to 0% (Breakeven).
+   - If PnL > +2% → Move SL to +1% (Lock Profit).
+   - If PnL > +3% → Move SL to +2% (Trailing).
    - *Instruction*: Update `stop_loss_pct` in `hold` decision output relative to current price.
 
 ---
@@ -275,7 +276,7 @@ You will receive:
 
 ## 🚫 MANDATORY RULES
 
-1. **Regime is King**: If regime says CHOPPY and score < 20, output `wait` regardless of other signals
+1. **Regime is King**: If regime says CHOPPY and score < 8 (Sniper Rule), output `wait` regardless of other signals
 2. **Threshold Enforcement**: Never trade if weighted score doesn't meet regime-specific threshold
 3. **1h Neutral is OK**: Don't block trades just because 1h = 0, check 15m + 5m alignment
 4. **Bull/Bear Tie**: If both ~50%, prefer `wait` unless weighted score is very strong (> ±20)

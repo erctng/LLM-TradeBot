@@ -98,59 +98,22 @@ class DecisionStageRunner:
             fast_signal = self._detect_fast_trend_signal(context.processed_dfs.get('5m'))
 
         if fast_signal:
-            decision_source = 'fast_trend'
             change_pct = fast_signal['change_pct']
             volume_ratio = fast_signal['volume_ratio']
             fast_action = fast_signal['action']
-            fast_confidence = fast_signal['confidence']
             fast_reason = f"30m trend {change_pct:+.2f}% | RVOL {volume_ratio:.2f}x"
 
             if not headless_mode:
-                print("[Step 3/5] ⚡ Fast Trend Trigger - Immediate entry signal")
+                print(f"[Step 3/5] ⚡ Fast Trend Detected: {fast_action.upper()}")
 
-            global_state.add_log(f"[⚡ FAST] {fast_action.upper()} | {fast_reason}")
-
-            if fast_action == 'open_long':
-                bull_conf = fast_confidence
-                bear_conf = max(0.0, 100.0 - fast_confidence)
-                bull_stance = 'FAST_UP'
-                bear_stance = 'HEDGE'
-                bull_reason = fast_reason
-                bear_reason = 'Short bias weak vs momentum'
-            else:
-                bull_conf = max(0.0, 100.0 - fast_confidence)
-                bear_conf = fast_confidence
-                bull_stance = 'HEDGE'
-                bear_stance = 'FAST_DN'
-                bull_reason = 'Long bias weak vs momentum'
-                bear_reason = fast_reason
-
-            decision_payload = {
-                'action': fast_action,
-                'confidence': fast_confidence,
-                'position_size_pct': min(100.0, max(10.0, fast_confidence)),
-                'reasoning': fast_reason,
-                'bull_perspective': {
-                    'bull_confidence': bull_conf,
-                    'stance': bull_stance,
-                    'bullish_reasons': bull_reason
-                },
-                'bear_perspective': {
-                    'bear_confidence': bear_conf,
-                    'stance': bear_stance,
-                    'bearish_reasons': bear_reason
-                }
-            }
-            try:
-                conf_val = float(decision_payload.get('confidence', 0) or 0)
-            except (TypeError, ValueError):
-                conf_val = 0.0
+            global_state.add_log(f"[⚡ FAST DETECTED] {fast_action.upper()} | {fast_reason}")
             global_state.add_agent_message(
                 "decision_core",
-                f"Action: {decision_payload.get('action').upper()} | Conf: {conf_val:.1f}% | Reason: {decision_payload.get('reasoning')[:100]}... | Source: FAST",
+                f"⚡ Fast Trend Detected: {fast_action.upper()} ({fast_reason}) - Routing to final decision",
                 level="info"
             )
-        elif not forced_exit:
+
+        if not forced_exit:
             if llm_enabled:
                 if not headless_mode:
                     print("[Step 3/5] 🧠 DeepSeek LLM - Making decision...")
@@ -326,6 +289,27 @@ class DecisionStageRunner:
             decision_payload.get('action'),
             position_side=(context.current_position_info or {}).get('side')
         )
+
+        # --- V2 Plan: Strict Four-Layer Veto Enforcement ---
+        if not forced_exit and decision_payload.get('action') in ('open_long', 'open_short'):
+            four_layer = getattr(global_state, 'four_layer_result', {}) or {}
+            layers_passed = bool(
+                four_layer.get('layer1_pass')
+                and four_layer.get('layer2_pass')
+                and four_layer.get('layer3_pass')
+                and four_layer.get('layer4_pass')
+            )
+            # Check if Four-Layer blocked
+            if not layers_passed:
+                veto_reason = four_layer.get('blocking_reason', 'Layers did not pass')
+                global_state.add_log(f"🛡️ [VETO] Four-Layer Filter blocked {decision_payload['action'].upper()}: {veto_reason}")
+                global_state.add_agent_message("decision_core", f"🛡️ VETO applied by Four-Layer Filter: {veto_reason}", level="warning")
+                
+                decision_payload['action'] = 'wait'
+                decision_payload['confidence'] = 99
+                decision_payload['reasoning'] = f"VETO by Four-Layer Filter: {veto_reason}. Original LLM intent: {decision_payload.get('reasoning')}"
+                decision_source = 'four_layer_veto'
+        # ---------------------------------------------------
 
         q_trend = context.quant_analysis.get('trend', {})
         q_osc = context.quant_analysis.get('oscillator', {})
