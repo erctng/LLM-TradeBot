@@ -25,11 +25,12 @@ class CycleContext:
     current_position_info: Optional[Dict[str, Any]] = None
     quant_analysis: Optional[Dict[str, Any]] = None
     predict_result: Optional[PredictResult] = None
+    reflection_result: Optional[Dict[str, Any]] = None
     reflection_text: Optional[str] = None
     regime_result: Optional[Dict[str, Any]] = None
     four_layer_result: Optional[Dict[str, Any]] = None
     trend_1h: Optional[str] = None
-    vote_result: Optional[VoteResult] = None,
+    vote_result: Optional[VoteResult] = None
     order_params: Optional[Dict[str, Any]] = None
     account_balance: Optional[float] = None
     current_position: Optional[PositionInfo] = None

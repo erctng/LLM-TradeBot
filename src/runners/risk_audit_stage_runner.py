@@ -2,7 +2,7 @@ import asyncio
 
 from typing import Dict, Optional, Any, Tuple, List
 
-from uvicorn import Config
+from src.config import Config
 
 from src.api.binance_client import BinanceClient
 from src.agents.agent_config import AgentConfig

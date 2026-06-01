@@ -61,6 +61,22 @@ class ActionPipelineStageRunner:
                     guardian_reason=f"Four-Layer Veto: {veto_reason}"
                 )
                 global_state.update_decision(decision_dict)
+
+                if audit_result:
+                    self.saver.save_risk_audit(
+                        audit_result={
+                            'passed': False,
+                            'risk_level': audit_result.risk_level.value,
+                            'blocked_reason': f"Four-Layer Veto: {veto_reason}",
+                            'corrections': audit_result.corrections,
+                            'warnings': audit_result.warnings,
+                            'order_params': context.order_params,
+                            'cycle_id': context.cycle_id
+                        },
+                        symbol=context.symbol,
+                        snapshot_id=context.snapshot_id,
+                        cycle_id=context.cycle_id
+                    )
                 
                 return {
                     'status': 'blocked',

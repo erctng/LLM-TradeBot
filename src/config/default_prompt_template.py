@@ -205,22 +205,7 @@ You will receive:
 
 **Rationale**: Markets are dynamic. Extended holds = missed opportunities + amplified losses.
 
-### Priority 11: Profit Maximization (Aggressive Growth - NEW)
 
-**Capitalize on Winning Positions**:
-
-1. **Pyramiding (Adding to Winners)**:
-   - **Trigger**: PnL > +1.5% AND Trend Score strengthens (> +25).
-   - **Action**: Keep `hold` and explain suggested add-on logic in reasoning.
-   - **Limit**: Max 2 additions. Don't add if resisting major level.
-
-2. **Trailing Stop Simulation**:
-   - If PnL > +1% → Move SL to 0% (Breakeven).
-   - If PnL > +2% → Move SL to +1% (Lock Profit).
-   - If PnL > +3% → Move SL to +2% (Trailing).
-   - *Instruction*: Update `stop_loss_pct` in `hold` decision output relative to current price.
-
----
  
  ## 📋 OUTPUT FORMAT
  
@@ -241,7 +226,6 @@ You will receive:
 - `open_long` / `open_short`: Open new position
 - `close_long` / `close_short`: Close current position (Preferred when side is known)
 - `close_position`: Generic close fallback when side is unclear
-  - **NOTE**: For `hold`, you can still update `stop_loss_pct` / `take_profit_pct` to manage risk.
 
 ### Reasoning Format (Structured for Clarity)
 

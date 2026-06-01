@@ -86,6 +86,9 @@ class SharedState:
 
     # Indicator snapshot (for UI)
     indicator_snapshot: Dict[str, Any] = field(default_factory=dict)
+    
+    # Four-Layer Filter Result
+    four_layer_result: Dict[str, Any] = field(default_factory=dict)
 
     # Multi-Period Parser Agent Output
     multi_period_result: Dict[str, Any] = field(default_factory=dict)

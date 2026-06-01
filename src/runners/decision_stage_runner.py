@@ -305,7 +305,7 @@ class DecisionStageRunner:
             confidence=decision_payload.get('confidence', 0),
             weighted_score=decision_payload.get('confidence', 0) - 50,
             vote_details=vote_details,
-            multi_period_aligned=True,
+            multi_period_aligned=context.quant_analysis.get('comprehensive', {}).get('multi_period_aligned', True),
             reason=decision_payload.get('reasoning', 'DeepSeek LLM decision'),
             regime={
                 'regime': regime_desc,

@@ -381,6 +381,13 @@ class FourLayerFilterStageRunner:
                 "layer4_pass": bool(four_layer_result.get('layer4_pass'))
             }
         )
+        # V3 Plan: Update the trigger adaptive state so Layer 4 sensitivity dynamically adjusts
+        self._update_trigger_adaptive_state(
+            symbol=context.symbol,
+            trend_1h=trend_1h,
+            layer4_pass=bool(four_layer_result.get('layer4_pass'))
+        )
+
         return regime_result, four_layer_result, trend_1h
 
     def _get_trigger_state_key(self, symbol: str, trend_1h: str) -> str:
