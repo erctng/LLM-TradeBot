@@ -197,49 +197,18 @@ class DecisionStageRunner:
 
                 global_state.add_agent_message("decision_core", "⚖️ Running rule-based decision logic...", level="info")
                 decision_source = 'decision_core'
+                # --- V3 Plan: Disable Rule-Based Fallback ---
+                # If LLM/ML fails, we do NOT take directional trades. We strictly wait.
                 vote_core = await self.agent_provider.decision_core.make_decision(
                     quant_analysis=context.quant_analysis,
                     predict_result=context.predict_result,
                     market_data=market_data
                 )
-                four_layer = getattr(global_state, 'four_layer_result', {}) or {}
-                final_action = str(four_layer.get('final_action', 'wait') or 'wait').lower()
-                layers_passed = bool(
-                    four_layer.get('layer1_pass')
-                    and four_layer.get('layer2_pass')
-                    and four_layer.get('layer3_pass')
-                    and four_layer.get('layer4_pass')
-                )
-                has_position = False
-                if context.current_position_info:
-                    try:
-                        has_position = abs(float(context.current_position_info.get('quantity', 0) or 0)) > 0
-                    except (TypeError, ValueError):
-                        has_position = True
-
-                if (
-                    not has_position
-                    and vote_core.action in ('wait', 'hold')
-                    and layers_passed
-                    and final_action in ('long', 'short')
-                ):
-                    override_action = 'open_long' if final_action == 'long' else 'open_short'
-                    try:
-                        boost = float(four_layer.get('confidence_boost', 0) or 0)
-                    except (TypeError, ValueError):
-                        boost = 0.0
-                    override_conf = min(85.0, max(60.0, 60.0 + max(0.0, boost)))
-                    vote_core.action = override_action
-                    vote_core.confidence = max(float(vote_core.confidence or 0), override_conf)
-                    base_reason = str(vote_core.reason or "DecisionCore wait")
-                    vote_core.reason = f"{base_reason} | 4-Layer override: {override_action} (layers all pass)"
-                    if not isinstance(vote_core.vote_details, dict):
-                        vote_core.vote_details = {}
-                    vote_core.vote_details['four_layer_override'] = 1.0 if final_action == 'long' else -1.0
-                    log.info(
-                        f"⚡ Decision override applied: {override_action} "
-                        f"(confidence {vote_core.confidence:.1f}%, trigger={four_layer.get('trigger_pattern', 'unknown')})"
-                    )
+                
+                if vote_core.action in ('open_long', 'open_short'):
+                    log.warning(f"⚠️ Rule-based fallback attempted to {vote_core.action}. Forcing WAIT due to V3 sniper rule (LLM unavailable).")
+                    vote_core.action = 'wait'
+                    vote_core.reason = "LLM unavailable - fallback to WAIT"
 
                 size_pct = 0.0
                 if vote_core.trade_params and self.max_position_size:
@@ -290,26 +259,7 @@ class DecisionStageRunner:
             position_side=(context.current_position_info or {}).get('side')
         )
 
-        # --- V2 Plan: Strict Four-Layer Veto Enforcement ---
-        if not forced_exit and decision_payload.get('action') in ('open_long', 'open_short'):
-            four_layer = getattr(global_state, 'four_layer_result', {}) or {}
-            layers_passed = bool(
-                four_layer.get('layer1_pass')
-                and four_layer.get('layer2_pass')
-                and four_layer.get('layer3_pass')
-                and four_layer.get('layer4_pass')
-            )
-            # Check if Four-Layer blocked
-            if not layers_passed:
-                veto_reason = four_layer.get('blocking_reason', 'Layers did not pass')
-                global_state.add_log(f"🛡️ [VETO] Four-Layer Filter blocked {decision_payload['action'].upper()}: {veto_reason}")
-                global_state.add_agent_message("decision_core", f"🛡️ VETO applied by Four-Layer Filter: {veto_reason}", level="warning")
-                
-                decision_payload['action'] = 'wait'
-                decision_payload['confidence'] = 99
-                decision_payload['reasoning'] = f"VETO by Four-Layer Filter: {veto_reason}. Original LLM intent: {decision_payload.get('reasoning')}"
-                decision_source = 'four_layer_veto'
-        # ---------------------------------------------------
+        # (V2 Veto code removed - logic moved to ActionPipelineStageRunner guardian)
 
         q_trend = context.quant_analysis.get('trend', {})
         q_osc = context.quant_analysis.get('oscillator', {})

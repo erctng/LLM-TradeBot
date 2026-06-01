@@ -37,6 +37,42 @@ class ActionPipelineStageRunner:
         """Run risk-audit -> analyze-only gate -> execution as one stage."""
         context.order_params, audit_result, context.account_balance, context.current_position = await self.risk_audit_stage_runner.run(context)
 
+        # --- V3 Plan: The Guardian's Final Veto ---
+        if context.vote_result.action in ('open_long', 'open_short'):
+            four_layer = context.four_layer_result or getattr(global_state, 'four_layer_result', {}) or {}
+            layers_passed = bool(
+                four_layer.get('layer1_pass')
+                and four_layer.get('layer2_pass')
+                and four_layer.get('layer3_pass')
+                and four_layer.get('layer4_pass')
+            )
+            if not layers_passed:
+                veto_reason = four_layer.get('blocking_reason', 'Layers did not pass')
+                global_state.add_log(f"🛡️ [GUARDIAN VETO] Execution blocked for {context.vote_result.action.upper()}: {veto_reason}")
+                global_state.add_agent_message("risk_guardian", f"🛡️ Execution blocked by Four-Layer Filter: {veto_reason}", level="warning")
+                
+                decision_dict = self.result_builder.build_decision_snapshot(
+                    symbol=context.symbol,
+                    vote_result=context.vote_result,
+                    quant_analysis=context.quant_analysis,
+                    predict_result=context.predict_result,
+                    risk_level=audit_result.risk_level.value if audit_result else 'high',
+                    guardian_passed=False,
+                    guardian_reason=f"Four-Layer Veto: {veto_reason}"
+                )
+                global_state.update_decision(decision_dict)
+                
+                return {
+                    'status': 'blocked',
+                    'action': context.vote_result.action,
+                    'details': {
+                        'reason': f"Four-Layer Veto: {veto_reason}",
+                        'risk_level': 'high'
+                    },
+                    'current_price': context.current_price
+                }
+        # ----------------------------------------
+
         blocked_result = self._finalize_risk_audit_decision(
             context,
             audit_result=audit_result,
