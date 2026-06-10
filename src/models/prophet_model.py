@@ -197,22 +197,15 @@ class ProphetMLModel:
         """获取验证集 AUC 分数"""
         return getattr(self, 'val_auc_score', 0.5)
     
-    def predict_proba(self, features: Dict[str, float]) -> Dict[str, float]:
+    def predict_proba(self, features: Dict[str, float]) -> float:
         """
-        预测多分类概率 (Multi-class Trend Direction)
+        预测上涨概率 (Binary Classification)
         
         Args:
             features: 特征字典
         
         Returns:
-            Dict with probabilities for each class:
-            {
-                'strong_down': float,  # P(class=-2)
-                'weak_down': float,    # P(class=-1)
-                'neutral': float,      # P(class=0)
-                'weak_up': float,      # P(class=1)
-                'strong_up': float,    # P(class=2)
-            }
+            float: 上涨概率 P(UP)
         """
         if not self.is_trained or self.model is None:
             raise ValueError("模型未训练，请先调用 train() 或 load()")
@@ -220,19 +213,11 @@ class ProphetMLModel:
         # 构建特征向量
         feature_vector = self._prepare_features(features)
         
-        # 预测概率 (5 classes)
+        # 预测概率 (Binary)
         probs = self.model.predict_proba(feature_vector)[0]
         
-        # Map to class names
-        # LightGBM multiclass uses 0-indexed classes, but our labels are -2 to 2
-        # We need to map: class 0 → -2, class 1 → -1, class 2 → 0, class 3 → 1, class 4 → 2
-        return {
-            'strong_down': float(probs[0]),  # class -2 → index 0
-            'weak_down': float(probs[1]),    # class -1 → index 1
-            'neutral': float(probs[2]),      # class 0 → index 2
-            'weak_up': float(probs[3]),      # class 1 → index 3
-            'strong_up': float(probs[4]),    # class 2 → index 4
-        }
+        # probs[1] 是 class 1 (UP) 的概率
+        return float(probs[1])
     
     def _prepare_features(self, features: Dict[str, float]) -> pd.DataFrame:
         """

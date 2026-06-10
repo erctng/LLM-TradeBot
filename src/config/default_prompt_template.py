@@ -220,6 +220,8 @@ You will receive:
   }
  ```
  
+ > **CRITICAL RULE**: You MUST ALWAYS include the `"confidence"` field in your JSON, even if the action is `"wait"`. NEVER omit it.
+ 
 ### Action Types
 - `wait`: Default when no position and no signal
 - `hold`: Maintain current position (or wait if none)

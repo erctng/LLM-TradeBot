@@ -93,7 +93,7 @@ class SemanticAnalysisRunner:
             trigger_data = {
                 'symbol': context.symbol,
                 'pattern': context.four_layer_result.get('trigger_pattern'),
-                'rvol': context.four_layer_result.get('trigger_rvol', 1.0),
+                'rvol': context.processed_dfs['15m']['volume_ratio'].iloc[-1] if 'volume_ratio' in context.processed_dfs['15m'].columns else 1.0,
                 'trend_direction': context.four_layer_result.get('final_action', 'neutral')
             }
 

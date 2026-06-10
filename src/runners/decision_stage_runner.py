@@ -87,8 +87,10 @@ class DecisionStageRunner:
             global_state.add_log(f"[🧯 FORCED EXIT] {forced_exit.get('reasoning', 'Forced close')}")
             try:
                 conf_val = float(decision_payload.get('confidence', 0) or 0)
+                if conf_val == 0.0 and decision_payload.get('action') in ('wait', 'hold'):
+                    conf_val = 100.0
             except (TypeError, ValueError):
-                conf_val = 0.0
+                conf_val = 100.0 if decision_payload.get('action') in ('wait', 'hold') else 0.0
             global_state.add_agent_message(
                 "decision_core",
                 f"Action: {decision_payload.get('action', '').upper()} | Conf: {conf_val:.1f}% | Reason: {decision_payload.get('reasoning', '')} | Source: FORCED",
@@ -184,8 +186,10 @@ class DecisionStageRunner:
 
                 try:
                     conf_val = float(decision_payload.get('confidence', 0) or 0)
+                    if conf_val == 0.0 and decision_payload.get('action') in ('wait', 'hold'):
+                        conf_val = 100.0
                 except (TypeError, ValueError):
-                    conf_val = 0.0
+                    conf_val = 100.0 if decision_payload.get('action') in ('wait', 'hold') else 0.0
                 global_state.add_agent_message(
                     "decision_core",
                     f"Action: {decision_payload.get('action').upper()} | Conf: {conf_val:.1f}% | Reason: {decision_payload.get('reasoning')}",
@@ -234,8 +238,10 @@ class DecisionStageRunner:
                 }
                 try:
                     conf_val = float(decision_payload.get('confidence', 0) or 0)
+                    if conf_val == 0.0 and decision_payload.get('action') in ('wait', 'hold'):
+                        conf_val = 100.0
                 except (TypeError, ValueError):
-                    conf_val = 0.0
+                    conf_val = 100.0 if decision_payload.get('action') in ('wait', 'hold') else 0.0
                 global_state.add_agent_message(
                     "decision_core",
                     f"Action: {decision_payload.get('action').upper()} | Conf: {conf_val:.1f}% | Reason: {decision_payload.get('reasoning')} | Source: RULE",
