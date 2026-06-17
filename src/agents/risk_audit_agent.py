@@ -652,7 +652,7 @@ class RiskAuditAgent:
         """Allow rare breakout override when 1h range filter disagrees with strong trend breakout."""
         if self._is_sideways_regime(regime_name):
             return False
-        if confidence < 92:
+        if confidence < 80:
             return False
         if not isinstance(position_1h, dict):
             return False
@@ -670,19 +670,15 @@ class RiskAuditAgent:
 
         if action == 'open_long':
             return (
-                location in {'upper', 'resistance'}
-                and pos_pct >= 70
-                and t_1h >= 55
-                and t_15m >= 25
-                and t_5m >= 10
+                pos_pct >= 50
+                and t_1h >= 40
+                and t_15m >= 0
             )
         if action == 'open_short':
             return (
-                location in {'support', 'lower'}
-                and pos_pct <= 30
-                and t_1h <= -55
-                and t_15m <= -25
-                and t_5m <= -10
+                pos_pct <= 50
+                and t_1h <= -40
+                and t_15m <= 0
             )
         return False
     

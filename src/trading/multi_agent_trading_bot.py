@@ -869,12 +869,12 @@ class MultiAgentTradingBot:
             if action == 'open_long':
                 if trend_stance == 'DOWNTREND' and trend_strength == 'strong':
                     vetoed, veto_reason = True, "AI Trend Agent detects STRONG DOWNTREND (VETO LONG)"
-                elif sentiment_stance == 'BEARISH':
+                elif sentiment_stance == 'BEARISH' and trend_stance != 'UPTREND':
                     vetoed, veto_reason = True, "AI Sentiment Agent detects BEARISH Market (VETO LONG)"
             elif action == 'open_short':
                 if trend_stance == 'UPTREND' and trend_strength == 'strong':
                     vetoed, veto_reason = True, "AI Trend Agent detects STRONG UPTREND (VETO SHORT)"
-                elif sentiment_stance == 'BULLISH':
+                elif sentiment_stance == 'BULLISH' and trend_stance != 'DOWNTREND':
                     vetoed, veto_reason = True, "AI Sentiment Agent detects BULLISH Market (VETO SHORT)"
                     
             if vetoed:
@@ -1139,8 +1139,7 @@ class MultiAgentTradingBot:
         from src.models.prophet_model import HAS_LIGHTGBM
         if HAS_LIGHTGBM and self.agent_config.predict_agent:
             self.agent_provider.predict_agents_provider.start_auto_trainer(
-                self.symbol_manager.primary_symbol,
-                self.symbol_manager.symbols[0] if self.symbol_manager.symbols else None)
+                self.symbol_manager.symbols)
         
         # 设置初始间隔 (优先使用 CLI 参数，后续 API 可覆盖)
         global_state.cycle_interval = interval_minutes

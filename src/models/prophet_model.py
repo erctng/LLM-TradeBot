@@ -448,8 +448,8 @@ class ProphetAutoTrainer:
         
     def start(
         self,
-        predict_agent: PredictAgent,
-        symbol: str = 'BTCUSDT'
+        predict_agents: dict,
+        symbols: list
     ):
         """启动自动训练线程"""
         import threading
@@ -459,7 +459,7 @@ class ProphetAutoTrainer:
             return
         
         self._running = True
-        self._thread = threading.Thread(target=self._training_loop, args=(predict_agent, symbol), daemon=True)
+        self._thread = threading.Thread(target=self._training_loop, args=(predict_agents, symbols), daemon=True)
         self._thread.start()
         log.info(f"🔄 Prophet 自动训练器已启动 | 间隔: {self.interval_hours}h | 数据: {self.training_days}天")
     
@@ -470,8 +470,8 @@ class ProphetAutoTrainer:
     
     def _training_loop(
         self,
-        predict_agent: PredictAgent,
-        symbol: str):
+        predict_agents: dict,
+        symbols: list):
         """训练循环"""
         import time
         
@@ -479,8 +479,14 @@ class ProphetAutoTrainer:
         
         while self._running:
             try:
-                # 执行训练
-                self._do_train(predict_agent, symbol)
+                log.info(f"DEBUG: symbols passed to loop: {symbols}")
+                # 遍历所有交易对执行训练
+                for symbol in symbols:
+                    if not self._running:
+                        break
+                    if symbol in predict_agents:
+                        self._do_train(predict_agents[symbol], symbol)
+                
                 self.train_count += 1
                 self.last_train_time = datetime.now()
                 

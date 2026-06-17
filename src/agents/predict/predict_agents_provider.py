@@ -47,25 +47,21 @@ class PredictAgentsProvider:
 
     def start_auto_trainer(
         self,
-        primary_symbol: str,
-        fallback: Optional[str]
+        symbols: List[str]
     ):
-        # 为主交易对创建自动训练器 (容错: 主交易对未初始化时切换)
-        if primary_symbol not in self.predict_agents:
-            fallback_symbol = next(iter(self.predict_agents.keys()), None) or (fallback if fallback else None)
-            if fallback_symbol and fallback_symbol not in self.predict_agents:
-                self.predict_agents[fallback_symbol] = PredictAgent(horizon='30m', symbol=fallback_symbol)
-                log.info(f"🆕 Initialized PredictAgent for {fallback_symbol} (auto-trainer fallback)")
-            if fallback_symbol:
-                primary_symbol = fallback_symbol
-            else:
-                log.warning("⚠️ Prophet auto-trainer skipped: no PredictAgent available")
-
-        if primary_symbol in self.predict_agents:
-            primary_agent = self.predict_agents[primary_symbol]
+        if not symbols:
+            return
+            
+        # Ensure all symbols are initialized in predict_agents
+        for symbol in symbols:
+            if symbol not in self.predict_agents:
+                self.predict_agents[symbol] = PredictAgent(horizon='30m', symbol=symbol)
+                log.info(f"🆕 Initialized PredictAgent for {symbol} (auto-trainer fallback)")
+                
+        if self.predict_agents:
             self.auto_trainer.start(
-                primary_agent,
-                primary_symbol)
+                self.predict_agents,
+                symbols)
 
     async def predict(
         self,

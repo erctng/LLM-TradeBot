@@ -219,6 +219,10 @@ class SymbolManager:
     ) -> None:
         if not self.agent_config.symbol_selector_agent:
             return
+            
+        if not getattr(self, 'use_auto1', False) and not getattr(self, 'use_auto3', False):
+            # Do not run symbol selector if user specified a fixed list of symbols without AUTO flags
+            return
         
         if check_for_startup_done and self.selector_startup_done:
             return
