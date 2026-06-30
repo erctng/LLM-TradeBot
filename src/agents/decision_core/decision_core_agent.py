@@ -470,8 +470,18 @@ class DecisionCoreAgent:
             动态交易参数字典
         """
         base_size = 100.0  # 基础仓位 USDT
-        base_stop_loss = 1.5  # 基础止损百分比 (Phase 2: 1.0% -> 1.5%)
-        base_take_profit = 3.0  # 基础止盈百分比 (Phase 2: 2.0% -> 3.0%)
+        
+        # --- QUANTITATIVE RISK ENGINE (ATR-BASED) ---
+        # Fetch ATR% from regime or default to 1.5%
+        atr_pct = regime.get('atr_pct', 1.5) if regime else 1.5
+        
+        # Dynamic Trailing Stop (SL) based on volatility
+        # We want to give the trade enough breathing room, usually 1x to 1.5x ATR
+        # Cap it between 0.8% and 3.0% to avoid extreme stops
+        base_stop_loss = max(0.8, min(atr_pct * 1.5, 3.0))
+        
+        # Dynamic Take Profit (TP) ensuring minimum 1:2.5 Risk:Reward
+        base_take_profit = max(base_stop_loss * 2.5, 2.5)
         
         size_multiplier = 1.0
         sl_multiplier = 1.0

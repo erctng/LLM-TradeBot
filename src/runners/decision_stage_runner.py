@@ -638,8 +638,10 @@ class DecisionStageRunner:
             side_icon = "🟢" if position_info['side'] == 'LONG' else "🔴"
             pnl_icon = "💰" if position_info['unrealized_pnl'] > 0 else "💸"
             position_section = f"""
-## 💼 CURRENT POSITION STATUS (Virtual Sub-Agent Logic)
-> ⚠️ CRITICAL: YOU ARE HOLDING A POSITION. EVALUATE EXIT CONDITIONS FIRST.
+## 💼 CURRENT POSITION STATUS (Managed by Quantitative Engine)
+> ℹ️ INFO: YOU ARE CURRENTLY HOLDING A POSITION.
+> ⚠️ CRITICAL RULES FOR EXITS:
+> The Quantitative Engine handles Trailing Stops and Take Profits dynamically. DO NOT micromanage exits for small profits or losses.
 
 - **Status**: {side_icon} {position_info['side']}
 - **Entry Price**: ${position_info['entry_price']:,.2f}
@@ -648,12 +650,9 @@ class DecisionStageRunner:
 - **Quantity**: {position_info['quantity']}
 - **Leverage**: {position_info['leverage']}x
 
-**EXIT JUDGMENT INSTRUCTION**:
-1. **Trend Reversal**: If current trend contradicts position side (e.g. Long but Trend turned Bearish), consider CLOSE.
-2. **Profit/Risk**: Check if PnL is satisfactory or risk is increasing.
-3. **If Closing**:
-   - current side is LONG -> return `close_long`
-   - current side is SHORT -> return `close_short`
+**EXIT JUDGMENT INSTRUCTION (MACRO REVERSALS ONLY)**:
+1. DO NOT close the position simply because PnL is positive or negative. Let the Quantitative Engine's Trailing Stop do its job.
+2. ONLY consider closing the position (`close_long` or `close_short`) IF there is a MAJOR macro trend reversal that absolutely invalidates the original thesis (e.g. Layer 1 Trend changed from Bullish to Bearish).
 """
         
         context = f"""

@@ -631,6 +631,7 @@ class MultiAgentTradingBot:
                 'entry_time': datetime.now().isoformat(),
                 'stop_loss': order_params.get('stop_loss', 0),
                 'take_profit': order_params.get('take_profit', 0),
+                'stop_loss_pct': order_params.get('stop_loss_pct', 2.0),
                 'leverage': order_params.get('leverage', 1),
                 'position_value': position_value,
             }
@@ -786,9 +787,10 @@ class MultiAgentTradingBot:
                     stop_loss=None, # Use Trailing Stop instead
                     take_profit=order_params.get('take_profit')
                 )
+                callback_rate = float(order_params.get('stop_loss_pct', 2.0))
                 self.client.place_futures_trailing_stop(
                     symbol=self.symbol_manager.current_symbol,
-                    callback_rate=2.0,
+                    callback_rate=callback_rate,
                     position_side='LONG' if action == 'open_long' else 'SHORT'
                 )
             
@@ -1469,9 +1471,8 @@ class MultiAgentTradingBot:
             entry_price = pos['entry_price']
             quantity = pos['quantity']
             side = pos['side']  # LONG or SHORT
-            
             # Trailing Stop & Take Profit Logic (Simulated)
-            callback_rate = 0.02 # 2% trailing stop
+            callback_rate = float(pos.get('stop_loss_pct', 2.0)) / 100.0
             is_closed = False
             
             if side.upper() == 'LONG':
