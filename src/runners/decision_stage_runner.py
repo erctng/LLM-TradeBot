@@ -638,10 +638,8 @@ class DecisionStageRunner:
             side_icon = "🟢" if position_info['side'] == 'LONG' else "🔴"
             pnl_icon = "💰" if position_info['unrealized_pnl'] > 0 else "💸"
             position_section = f"""
-## 💼 CURRENT POSITION STATUS (Managed by Quantitative Engine)
-> ℹ️ INFO: YOU ARE CURRENTLY HOLDING A POSITION.
-> ⚠️ CRITICAL RULES FOR EXITS:
-> The Quantitative Engine handles Trailing Stops and Take Profits dynamically. DO NOT micromanage exits for small profits or losses.
+## 💼 CURRENT POSITION STATUS
+> ⚠️ CRITICAL: YOU ARE HOLDING A POSITION. AS AN EXPERT QUANT TRADER, YOUR GOAL IS TO MAXIMIZE R:R (RISK/REWARD) AND EXPECTED VALUE (EV).
 
 - **Status**: {side_icon} {position_info['side']}
 - **Entry Price**: ${position_info['entry_price']:,.2f}
@@ -650,9 +648,17 @@ class DecisionStageRunner:
 - **Quantity**: {position_info['quantity']}
 - **Leverage**: {position_info['leverage']}x
 
-**EXIT JUDGMENT INSTRUCTION (MACRO REVERSALS ONLY)**:
-1. DO NOT close the position simply because PnL is positive or negative. Let the Quantitative Engine's Trailing Stop do its job.
-2. ONLY consider closing the position (`close_long` or `close_short`) IF there is a MAJOR macro trend reversal that absolutely invalidates the original thesis (e.g. Layer 1 Trend changed from Bullish to Bearish).
+**EXIT JUDGMENT INSTRUCTION - ACT AS A PROFESSIONAL HEDGE FUND TRADER**:
+You have the authority to close this position. However, you MUST adhere to these strict quantitative principles to fix the R:R ratio:
+1. **LET WINNERS RUN (NO MICRO-PROFITS)**: Do NOT close a position for a negligible profit (e.g., < 1.0% or 1.5%). Closing trades at +0.1% destroys the mathematical expectancy of the strategy.
+2. **IGNORE MARKET NOISE**: Do not panic-close because of minor 5m/15m chart retracements. Markets need to breathe.
+3. **VALID REASONS TO CLOSE**:
+   - **Thesis Invalidation**: The macro trend has fully reversed against your position (e.g., strong resistance rejected, Layer 1 trend flipped).
+   - **Take Profit Reached**: The trade has achieved a strong R:R target (e.g., +2.5% to +5.0% profit).
+4. **Action Format**:
+   - If closing a LONG -> return `close_long`
+   - If closing a SHORT -> return `close_short`
+   - If holding -> return `wait`
 """
         
         context = f"""
