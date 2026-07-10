@@ -442,15 +442,21 @@ class DataReplayAgent:
     async def _fetch_and_append_to_cache(self, interval: str, start_ms: int, end_ms: int):
         """Fetch K-lines from API and append to cache"""
         try:
-            klines = self.client.client.futures_klines(
-                symbol=self.symbol,
-                interval=interval,
-                startTime=start_ms,
-                endTime=end_ms,
-                limit=1000
-            )
+            current_start = start_ms
+            total_appended = 0
             
-            if klines:
+            while current_start < end_ms:
+                klines = self.client.client.futures_klines(
+                    symbol=self.symbol,
+                    interval=interval,
+                    startTime=current_start,
+                    endTime=end_ms,
+                    limit=1000
+                )
+                
+                if not klines:
+                    break
+                    
                 # Convert to cache format
                 klines_dict = []
                 for k in klines:
@@ -464,7 +470,16 @@ class DataReplayAgent:
                     })
                 
                 self._kline_cache.append_data(self.symbol, interval, klines_dict)
-                log.debug(f"📦 Appended {len(klines_dict)} rows to {self.symbol}/{interval} cache")
+                total_appended += len(klines_dict)
+                
+                if len(klines) < 1000:
+                    break
+                    
+                current_start = klines[-1][0] + 1
+                import asyncio
+                await asyncio.sleep(0.1)
+                
+            log.debug(f"📦 Appended {total_appended} rows to {self.symbol}/{interval} cache")
                 
         except Exception as e:
             log.warning(f"Failed to fetch incremental data: {e}")
