@@ -413,7 +413,7 @@ class DataReplayAgent:
                         if not old_df.empty:
                             # Convert and append
                             old_df_reset = old_df.reset_index()
-                            old_df_reset['timestamp'] = old_df_reset['timestamp'].astype('int64') // 10**6
+                            old_df_reset['timestamp'] = ((old_df_reset['timestamp'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1ms'))
                             self._kline_cache.append_data(self.symbol, interval, old_df_reset.to_dict('records'), retention_days=0)
                     
                     # Get updated cache
@@ -434,7 +434,7 @@ class DataReplayAgent:
         # Save to cache
         if not df.empty:
             df_for_cache = df.reset_index()
-            df_for_cache['timestamp'] = df_for_cache['timestamp'].astype('int64') // 10**6
+            df_for_cache['timestamp'] = ((df_for_cache['timestamp'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1ms'))
             self._kline_cache.append_data(self.symbol, interval, df_for_cache.to_dict('records'), retention_days=0)
         
         return df
