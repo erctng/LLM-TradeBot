@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import numpy as np
 import pandas as pd
+import time
 
 from src.agents.predict import PredictAgent
 from src.utils.logger import log
@@ -585,6 +586,7 @@ class ProphetAutoTrainer:
                 all_klines = klines + all_klines
                 end_time = klines[0][0] - 1
                 remaining -= batch_size
+                time.sleep(0.2)
             
             # 转换为 DataFrame
             df = pd.DataFrame(all_klines, columns=[
