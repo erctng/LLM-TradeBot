@@ -81,6 +81,11 @@ class DataReplayAgent:
         if not end_has_time:
             end_dt = end_dt + timedelta(days=1)
 
+        # Cap end_dt to current UTC time to avoid looking for future data
+        now_utc = datetime.utcnow()
+        if end_dt > now_utc:
+            end_dt = now_utc
+
         # Normalize to UTC-naive to match Binance UTC timestamps
         self.start_date = self._to_utc_naive(start_dt)
         self.end_date = self._to_utc_naive(end_dt)
