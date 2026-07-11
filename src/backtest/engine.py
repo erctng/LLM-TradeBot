@@ -589,8 +589,9 @@ class BacktestEngine:
 
             available_cash = self.portfolio.cash
 
-            if params.get('position_size_pct', 0) > 0:
-                use_cash = available_cash * (params['position_size_pct'] / 100)
+            pos_size_pct = params.get('position_size_pct') or 0
+            if pos_size_pct > 0:
+                use_cash = available_cash * (pos_size_pct / 100)
                 target_position_value = use_cash * leverage
                 position_size = min(
                     target_position_value,
