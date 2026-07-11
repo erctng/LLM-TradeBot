@@ -209,6 +209,21 @@ class BacktestEngine:
         if config.strategy_mode == "agent":
             from src.backtest.agent_wrapper import BacktestAgentRunner
             self.agent_runner = BacktestAgentRunner(config.__dict__)
+            
+            # Initialize MetaOptimizerAgent
+            try:
+                from src.agents.meta.meta_optimizer_agent import MetaOptimizerAgent
+                # We need a Config object to initialize MetaOptimizerAgent
+                from src.config.config import Config
+                import os
+                config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config', 'config.yaml')
+                app_config = Config(config_path)
+                self.meta_optimizer = MetaOptimizerAgent(app_config)
+            except Exception as e:
+                log.warning(f"Failed to initialize MetaOptimizerAgent: {e}")
+                self.meta_optimizer = None
+        else:
+            self.meta_optimizer = None
         
         # State
         self.is_running = False
@@ -308,7 +323,26 @@ class BacktestEngine:
                 should_record_equity = (i % 12 == 0) or (i == total - 1) or (not is_passive_action(decision.get('action')))
                 if should_record_equity:
                     self.portfolio.record_equity(timestamp, prices)
-                
+                    
+                # Periodic Meta-Optimization (every 144 steps ~ 12 hours on 5m timeframe)
+                if self.meta_optimizer and i > 0 and i % 144 == 0:
+                    # Get recent trades to evaluate
+                    if self.portfolio.trades and len(self.portfolio.trades) >= 5:
+                        recent_trades = []
+                        for t in self.portfolio.trades[-30:]: # Evaluate up to last 30 trades
+                            recent_trades.append({
+                                'action': t.action,
+                                'symbol': t.symbol,
+                                'profit_pct': t.pnl_pct,
+                                'reason': t.reason
+                            })
+                        regime = decision.get('regime', 'UNKNOWN')
+                        try:
+                            # Optimize in background without blocking
+                            log.info("🔍 Triggering Meta-Optimizer evaluation...")
+                            self.meta_optimizer.evaluate_and_optimize(recent_trades, regime)
+                        except Exception as e:
+                            log.error(f"MetaOptimizer evaluation failed: {e}")
                 
                 # Progress callback (includes real-time profit data and incremental visualization data)
                 if progress_callback:

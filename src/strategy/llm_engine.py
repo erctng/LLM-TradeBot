@@ -388,31 +388,35 @@ Focus ONLY on bearish factors. Ignore bullish signals."""
             return {"bearish_reasons": "Analysis unavailable", "bear_confidence": 50}
     
     def get_system_prompt(self) -> str:
-        """Build System Prompt (English Version) or Load Custom"""
+        """Build System Prompt (English Version) or Load Custom via PromptManager"""
         import os
+        from src.utils.prompt_manager import PromptManager
         
-        # Check for custom prompt
-        # Assuming src/strategy/llm_engine.py, so config is ../../config/custom_prompt.md
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        custom_prompt_path = os.path.join(base_dir, 'config', 'custom_prompt.md')
-        
-        if os.path.exists(custom_prompt_path):
+        def _load_default_engine_prompt() -> str:
+            # Check for custom prompt
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            custom_prompt_path = os.path.join(base_dir, 'config', 'custom_prompt.md')
+            
+            if os.path.exists(custom_prompt_path):
+                try:
+                    with open(custom_prompt_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if content.strip():
+                            log.info("📝 Loading Custom System Prompt from file as fallback default")
+                            return content
+                except Exception as e:
+                    log.error(f"Failed to load custom prompt: {e}")
+            
+            # Load default from template
             try:
-                with open(custom_prompt_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    if content.strip():
-                        log.info("📝 Loading Custom System Prompt from file")
-                        return content
-            except Exception as e:
-                log.error(f"Failed to load custom prompt: {e}")
-        
-        # Load default from template
-        try:
-            from src.config.default_prompt_template import DEFAULT_SYSTEM_PROMPT
-            return DEFAULT_SYSTEM_PROMPT
-        except ImportError:
-            log.error("Failed to import DEFAULT_SYSTEM_PROMPT")
-            return "Error: Default prompt missing"
+                from src.config.default_prompt_template import DEFAULT_SYSTEM_PROMPT
+                return DEFAULT_SYSTEM_PROMPT
+            except ImportError:
+                log.error("Failed to import DEFAULT_SYSTEM_PROMPT")
+                return "Error: Default prompt missing"
+
+        PromptManager.register_default("decision_core", _load_default_engine_prompt)
+        return PromptManager.get_prompt("decision_core")
     
     def get_user_prompt(self, market_context: str, bull_perspective: Dict = None, bear_perspective: Dict = None, reflection: str = None) -> str:
         """Build User Prompt - DATA ONLY (No instructions, all rules are in system prompt)"""

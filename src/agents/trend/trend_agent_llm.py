@@ -125,7 +125,9 @@ class TrendAgentLLM(TrendAgent):
     
     def get_system_prompt(self) -> Optional[str]:
         """System prompt for trend analysis"""
-        return """You are a professional crypto trend analyst. Your task is to analyze 1h timeframe data and provide a concise semantic analysis.
+        from src.utils.prompt_manager import PromptManager
+        
+        default_prompt = """You are a professional crypto trend analyst. Your task is to analyze 1h timeframe data and provide a concise semantic analysis.
 
 Output format: 2-3 sentences covering:
 1. Trend direction (uptrend/downtrend/neutral) based on EMA alignment
@@ -135,6 +137,9 @@ Output format: 2-3 sentences covering:
 
 Be concise, professional, and objective. Use trading terminology.
 Do NOT use markdown formatting. Output plain text only."""
+
+        PromptManager.register_default("trend", lambda: default_prompt)
+        return PromptManager.get_prompt("trend")
 
     def _build_prompt(self, data: Dict) -> str:
         """Build analysis prompt from data"""

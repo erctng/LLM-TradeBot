@@ -127,7 +127,9 @@ class SetupAgentLLM(SetupAgent):
     
     def get_system_prompt(self) -> Optional[str]:
         """System prompt for setup analysis"""
-        return """You are a professional crypto setup analyst. Your task is to analyze 15m timeframe data and assess entry positions using KDJ, Bollinger Bands, and MACD.
+        from src.utils.prompt_manager import PromptManager
+        
+        default_prompt = """You are a professional crypto setup analyst. Your task is to analyze 15m timeframe data and assess entry positions using KDJ, Bollinger Bands, and MACD.
 
 Output format: 2-3 sentences covering:
 1. KDJ oscillator status (overbought/oversold/neutral)
@@ -137,6 +139,9 @@ Output format: 2-3 sentences covering:
 
 Be concise, professional, and objective. Use trading terminology.
 Do NOT use markdown formatting. Output plain text only."""
+
+        PromptManager.register_default("setup", lambda: default_prompt)
+        return PromptManager.get_prompt("setup")
 
     def _build_prompt(self, data: Dict) -> str:
         """Build analysis prompt from data"""

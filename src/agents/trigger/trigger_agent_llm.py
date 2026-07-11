@@ -122,7 +122,9 @@ class TriggerAgentLLM(TriggerAgent):
     
     def get_system_prompt(self) -> Optional[str]:
         """System prompt for trigger analysis"""
-        return """You are a professional crypto trigger analyst. Your task is to analyze 5m timeframe data and assess entry triggers using candlestick patterns and volume.
+        from src.utils.prompt_manager import PromptManager
+        
+        default_prompt = """You are a professional crypto trigger analyst. Your task is to analyze 5m timeframe data and assess entry triggers using candlestick patterns and volume.
 
 Output format: 2-3 sentences covering:
 1. Pattern detection status (engulfing, volume breakout, or none)
@@ -132,6 +134,9 @@ Output format: 2-3 sentences covering:
 
 Be concise, professional, and objective. Use trading terminology.
 Do NOT use markdown formatting. Output plain text only."""
+
+        PromptManager.register_default("trigger", lambda: default_prompt)
+        return PromptManager.get_prompt("trigger")
 
     def _build_prompt(self, data: Dict) -> str:
         """Build analysis prompt from data"""
