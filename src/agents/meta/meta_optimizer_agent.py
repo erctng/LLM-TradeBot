@@ -37,10 +37,10 @@ class MetaOptimizerAgent:
         self.min_win_rate_threshold = 0.30 # Rollback if win rate < 30%
         log.info("🧠 MetaOptimizerAgent initialized")
 
-    def evaluate_and_optimize(self, recent_trades: List[Dict], market_regime: str) -> bool:
+    def evaluate_and_optimize(self, recent_trades: List[Dict], market_regime: str, shadow_trades: Optional[List[Dict]] = None) -> bool:
         """
         Evaluate recent performance and optimize prompts if necessary.
-        Returns True if prompts were updated.
+        Returns True if prompts were updated or a shadow prompt was promoted.
         """
         if not recent_trades or len(recent_trades) < 10:
             log.info("🔧 MetaOptimizerAgent: Not enough trades to evaluate.")
@@ -60,6 +60,29 @@ class MetaOptimizerAgent:
                 PromptManager.rollback_prompt(agent)
             return True
             
+        # SHADOW MODE EVALUATION
+        shadow_prompt = PromptManager.get_shadow_prompt("decision_core")
+        if shadow_prompt and shadow_trades and len(shadow_trades) >= 5:
+            s_wins = [t for t in shadow_trades if t.get('profit_pct', 0) > 0]
+            s_win_rate = len(s_wins) / len(shadow_trades)
+            s_total_pnl = sum(t.get('profit_pct', 0) for t in shadow_trades)
+            
+            log.info(f"👻 Shadow Portfolio Evaluation | Win Rate: {s_win_rate:.2%} | Total PnL: {s_total_pnl:.2f}%")
+            
+            # Simple Promotion Criteria: Shadow must outperform Live in PnL
+            if s_total_pnl > total_pnl:
+                log.info(f"🚀 Shadow outperforms Live ({s_total_pnl:.2f}% > {total_pnl:.2f}%). Promoting shadow prompt!")
+                PromptManager.promote_shadow_prompt("decision_core", reason=f"Shadow outperformance: {s_total_pnl:.2f}% > {total_pnl:.2f}%")
+                return True
+            else:
+                log.info(f"🗑️ Shadow underperforms Live ({s_total_pnl:.2f}% <= {total_pnl:.2f}%). Discarding shadow prompt.")
+                PromptManager.discard_shadow_prompt("decision_core")
+                return False
+                
+        if shadow_prompt:
+            log.info("👻 Shadow prompt active, waiting for more shadow trades to evaluate.")
+            return False
+            
         # If performance is okay, try to optimize further for current regime
         # Format trade history for LLM
         trades_text = "\n".join([
@@ -69,23 +92,20 @@ class MetaOptimizerAgent:
         
         active_prompts = PromptManager.get_all_active_prompts()
         
-        system_prompt = """You are an elite AI Quant Researcher overseeing a fleet of trading agents.
-Your task is to analyze recent trade performance in the current market regime and optimize the system prompts of the trading agents to improve their Sharpe ratio and PnL.
-Identify patterns in losing trades and adjust the rules in the prompts to prevent them.
-If winning trades are being cut short, adjust the take-profit guidance.
+        system_prompt = """You are an elite AI Quant Researcher overseeing a trading bot's DecisionCore agent.
+Your task is to analyze recent trade performance in the current market regime and optimize the system prompt of the DecisionCore agent to improve the Sharpe ratio and Profit Factor.
+The DecisionCore reads outputs from Trend, Setup, and Trigger analysts. You must teach it how to better weigh these signals in the current regime.
+Identify patterns in losing trades and adjust the rules in the prompt to prevent them.
 
 Output MUST be a valid JSON object matching this schema exactly:
 {
   "reasoning": "Explanation of what you are changing and why.",
   "prompts": {
-    "trend": "new complete prompt for TrendAgent",
-    "setup": "new complete prompt for SetupAgent",
-    "trigger": "new complete prompt for TriggerAgent",
     "decision_core": "new complete prompt for DecisionCore"
   }
 }
 
-You must return ALL FOUR prompts, fully written out, incorporating your new rules into their existing structure. DO NOT use markdown code blocks like ```json around the output. Output pure JSON."""
+You must return the full prompt, incorporating your new rules into its existing structure. DO NOT use markdown code blocks like ```json around the output. Output pure JSON."""
 
         user_prompt = f"""
 ### Current Market Regime
@@ -98,15 +118,15 @@ Total PnL: {total_pnl:.2f}%
 ### Recent Trades
 {trades_text}
 
-### Current Active Prompts
-```json
-{json.dumps(active_prompts, indent=2)}
+### Current Active Prompt (DecisionCore)
+```text
+{active_prompts.get('decision_core', '')}
 ```
 
 Generate the optimized JSON now.
 """
         try:
-            log.info("🧠 Asking LLM to optimize agent prompts...")
+            log.info("🧠 Asking LLM to optimize DecisionCore prompt...")
             response = self.client.chat(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt
@@ -129,12 +149,12 @@ Generate the optimized JSON now.
             new_prompts = optimized_data.get('prompts', {})
             updated = False
             
-            for agent_name, new_prompt in new_prompts.items():
-                if agent_name in ['trend', 'setup', 'trigger', 'decision_core'] and new_prompt:
-                    if new_prompt != active_prompts.get(agent_name):
-                        success = PromptManager.update_prompt(agent_name, new_prompt, reason=f"Market Regime: {market_regime}. {reasoning[:100]}...")
-                        if success:
-                            updated = True
+            new_prompt = new_prompts.get('decision_core')
+            if new_prompt and new_prompt != active_prompts.get('decision_core'):
+                # STAGE the prompt in Shadow Mode instead of applying directly
+                success = PromptManager.stage_shadow_prompt('decision_core', new_prompt)
+                if success:
+                    updated = True
                             
             return updated
             

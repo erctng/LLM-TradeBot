@@ -17,6 +17,8 @@ class PromptManager:
     PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "dynamic_prompts")
     # Directory to store prompt history for rollbacks
     HISTORY_DIR = os.path.join(PROMPTS_DIR, "history")
+    # Directory to store challenger prompts (shadow mode)
+    SHADOW_DIR = os.path.join(PROMPTS_DIR, "shadow")
     
     _defaults: Dict[str, Callable[[], str]] = {}
 
@@ -25,6 +27,7 @@ class PromptManager:
         """Ensure directories exist"""
         os.makedirs(cls.PROMPTS_DIR, exist_ok=True)
         os.makedirs(cls.HISTORY_DIR, exist_ok=True)
+        os.makedirs(cls.SHADOW_DIR, exist_ok=True)
 
     @classmethod
     def register_default(cls, agent_name: str, default_func: Callable[[], str]):
@@ -125,3 +128,62 @@ class PromptManager:
         for agent_name in cls._defaults.keys():
             result[agent_name] = cls.get_prompt(agent_name)
         return result
+
+    @classmethod
+    def stage_shadow_prompt(cls, agent_name: str, new_prompt: str) -> bool:
+        """
+        Save a new prompt in shadow mode for evaluation.
+        """
+        cls._ensure_dirs()
+        shadow_path = os.path.join(cls.SHADOW_DIR, f"{agent_name}_shadow.txt")
+        try:
+            with open(shadow_path, 'w', encoding='utf-8') as f:
+                f.write(new_prompt.strip())
+            log.info(f"👻 Staged shadow prompt for {agent_name}")
+            return True
+        except Exception as e:
+            log.error(f"Failed to write shadow prompt for {agent_name}: {e}")
+            return False
+
+    @classmethod
+    def get_shadow_prompt(cls, agent_name: str) -> Optional[str]:
+        """
+        Get the current shadow prompt for the agent, if any.
+        """
+        cls._ensure_dirs()
+        shadow_path = os.path.join(cls.SHADOW_DIR, f"{agent_name}_shadow.txt")
+        if os.path.exists(shadow_path):
+            try:
+                with open(shadow_path, 'r', encoding='utf-8') as f:
+                    return f.read().strip()
+            except Exception as e:
+                log.error(f"Failed to read shadow prompt for {agent_name}: {e}")
+        return None
+
+    @classmethod
+    def promote_shadow_prompt(cls, agent_name: str, reason: str = "Shadow evaluation passed") -> bool:
+        """
+        Promote a shadow prompt to active status.
+        """
+        shadow_prompt = cls.get_shadow_prompt(agent_name)
+        if not shadow_prompt:
+            log.warning(f"No shadow prompt found to promote for {agent_name}")
+            return False
+            
+        success = cls.update_prompt(agent_name, shadow_prompt, reason)
+        if success:
+            cls.discard_shadow_prompt(agent_name)
+            log.info(f"🚀 Promoted shadow prompt for {agent_name}")
+        return success
+
+    @classmethod
+    def discard_shadow_prompt(cls, agent_name: str):
+        """
+        Discard the current shadow prompt.
+        """
+        cls._ensure_dirs()
+        shadow_path = os.path.join(cls.SHADOW_DIR, f"{agent_name}_shadow.txt")
+        if os.path.exists(shadow_path):
+            os.remove(shadow_path)
+            log.info(f"🗑️ Discarded shadow prompt for {agent_name}")
+

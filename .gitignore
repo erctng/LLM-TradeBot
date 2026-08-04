@@ -108,3 +108,8 @@ tmp/
 # Development folders (not for production)
 nofx-dev/
 nofx-main/
+
+.env_remote
+*.zip
+*.tar.gz
+temp_logs.txt

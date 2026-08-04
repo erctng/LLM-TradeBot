@@ -147,7 +147,7 @@ class StrategyEngine:
             return True
         return False
     
-    def make_decision(self, market_context_text: str, market_context_data: Dict, reflection: str = None, bull_perspective: Dict = None, bear_perspective: Dict = None) -> Dict:
+    def make_decision(self, market_context_text: str, market_context_data: Dict, reflection: str = None, bull_perspective: Dict = None, bear_perspective: Dict = None, is_shadow_run: bool = False) -> Dict:
         """
         基于市场上下文做出交易决策
         
@@ -157,6 +157,7 @@ class StrategyEngine:
             reflection: 可选的交易反思文本（来自 ReflectionAgent）
             bull_perspective: 可选的多头观点
             bear_perspective: 可选的空头观点
+            is_shadow_run: 是否为影子测试运行
             
         Returns:
             决策结果字典
@@ -179,25 +180,35 @@ class StrategyEngine:
             log.info("🐻 Gathering Bear perspective (on-demand)...")
             bear_perspective = self.get_bear_perspective(market_context_text)
         
-        # 🆕 保存Bull/Bear日志 (if they were generated here or passed in)
-        try:
-            from src.server.state import global_state
-            if hasattr(global_state, 'saver') and hasattr(global_state, 'current_cycle_id'):
-                global_state.saver.save_bull_bear_perspectives(
-                    bull=bull_perspective,
-                    bear=bear_perspective,
-                    symbol=market_context_data['symbol'],
-                    cycle_id=global_state.current_cycle_id
-                )
-        except Exception as e:
-            log.warning(f"Failed to save bull/bear perspectives log: {e}")
+        # 🆕 保存Bull/Bear日志 (if they were generated here or passed in, only in live run)
+        if not is_shadow_run:
+            try:
+                from src.server.state import global_state
+                if hasattr(global_state, 'saver') and hasattr(global_state, 'current_cycle_id'):
+                    global_state.saver.save_bull_bear_perspectives(
+                        bull=bull_perspective,
+                        bear=bear_perspective,
+                        symbol=market_context_data['symbol'],
+                        cycle_id=global_state.current_cycle_id
+                    )
+            except Exception as e:
+                log.warning(f"Failed to save bull/bear perspectives log: {e}")
         
-        system_prompt = self.get_system_prompt()
+        if is_shadow_run:
+            from src.utils.prompt_manager import PromptManager
+            system_prompt = PromptManager.get_shadow_prompt("decision_core")
+            if not system_prompt:
+                return {} # No shadow prompt exists
+        else:
+            system_prompt = self.get_system_prompt()
+        
         user_prompt = self.get_user_prompt(market_context_text, bull_perspective, bear_perspective, reflection)
         
         # 记录 LLM 输入
-        log.llm_input(f"正在发送市场数据到 {self.provider}...", market_context_text)
-
+        if not is_shadow_run:
+            log.llm_input(f"正在发送市场数据到 {self.provider}...", market_context_text)
+        else:
+            log.info(f"👻 Executing Shadow Prompt evaluation for {self.provider}...")
         
         try:
             response = self.client.chat(
@@ -225,21 +236,19 @@ class StrategyEngine:
             # 验证决策
             is_valid, errors = self.validator.validate(decision)
             if not is_valid:
-                log.warning(f"LLM 决策验证失败: {errors}")
-                log.warning(f"原始决策: {decision}")
+                log.warning(f"LLM 决策验证失败{' (Shadow)' if is_shadow_run else ''}: {errors}")
                 return self._get_fallback_decision(market_context_data)
             
             # 记录 LLM 输出
-            log.llm_output(f"{self.provider} 返回决策结果", decision)
-            if reasoning:
-                log.info(f"推理过程:\n{reasoning}")
-            
-            # 记录决策
-            log.llm_decision(
-                action=decision.get('action', 'wait'),
-                confidence=decision.get('confidence', 0),
-                reasoning=decision.get('reasoning', reasoning)
-            )
+            if not is_shadow_run:
+                log.llm_output(f"{self.provider} 返回决策结果", decision)
+                if reasoning:
+                    log.info(f"推理过程:\n{reasoning}")
+                log.llm_decision(
+                    action=decision.get('action', 'wait'),
+                    confidence=decision.get('confidence', 0),
+                    reasoning=decision.get('reasoning', reasoning)
+                )
             
             # 添加元数据
             decision['timestamp'] = market_context_data['timestamp']
@@ -248,6 +257,14 @@ class StrategyEngine:
             decision['raw_response'] = content
             decision['reasoning_detail'] = reasoning
             decision['validation_passed'] = True
+            
+            # Execute shadow run if this is the live run
+            if not is_shadow_run:
+                from src.utils.prompt_manager import PromptManager
+                if PromptManager.get_shadow_prompt("decision_core"):
+                    shadow_dec = self.make_decision(market_context_text, market_context_data, reflection, bull_perspective, bear_perspective, is_shadow_run=True)
+                    if shadow_dec:
+                        decision['shadow_decision'] = shadow_dec
             
             # ✅ Return full prompt for logging
             decision['system_prompt'] = system_prompt

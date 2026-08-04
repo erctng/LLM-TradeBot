@@ -121,6 +121,8 @@ class Position:
     contract_type: str = "linear"  # "linear" 或 "inverse"
     contract_size: float = 1.0     # 币本位合约面值
     trailing_stop_pct: Optional[float] = None
+    chandelier_atr: Optional[float] = None  # Current ATR value for Chandelier Exit
+    chandelier_multiplier: Optional[float] = None  # Multiplier (e.g., 2.5) for Chandelier Exit
     highest_price: float = 0.0      # For Long Trailing
     lowest_price: float = float('inf') # For Short Trailing
     
@@ -189,18 +191,27 @@ class Position:
                 self.lowest_price = current_price
 
     def should_trailing_stop(self, current_price: float) -> bool:
-        """Check if trailing stop is triggered"""
-        if self.trailing_stop_pct is None:
-            return False
-            
-        if self.side == Side.LONG:
-            # If price drops X% from high
-            stop_price = self.highest_price * (1 - self.trailing_stop_pct / 100)
-            return current_price <= stop_price
-        else:
-            # If price rises X% from low
-            stop_price = self.lowest_price * (1 + self.trailing_stop_pct / 100)
-            return current_price >= stop_price
+        """Check if trailing stop or Chandelier Exit is triggered"""
+        
+        # Check Chandelier Exit
+        if self.chandelier_atr is not None and self.chandelier_multiplier is not None:
+            if self.side == Side.LONG:
+                stop_price = self.highest_price - (self.chandelier_atr * self.chandelier_multiplier)
+                if current_price <= stop_price: return True
+            else:
+                stop_price = self.lowest_price + (self.chandelier_atr * self.chandelier_multiplier)
+                if current_price >= stop_price: return True
+                
+        # Check Percentage Trailing Stop
+        if self.trailing_stop_pct is not None:
+            if self.side == Side.LONG:
+                stop_price = self.highest_price * (1 - self.trailing_stop_pct / 100)
+                if current_price <= stop_price: return True
+            else:
+                stop_price = self.lowest_price * (1 + self.trailing_stop_pct / 100)
+                if current_price >= stop_price: return True
+                
+        return False
 
 @dataclass
 class Trade:
@@ -530,7 +541,9 @@ class BacktestPortfolio:
         timestamp: datetime,
         stop_loss_pct: float = None,
         take_profit_pct: float = None,
-        trailing_stop_pct: float = None
+        trailing_stop_pct: float = None,
+        chandelier_atr: float = None,
+        chandelier_multiplier: float = None
     ) -> Optional[Trade]:
         """
         Open position
@@ -595,9 +608,13 @@ class BacktestPortfolio:
             entry_time=timestamp,
             stop_loss=stop_loss,
             take_profit=take_profit,
+            contract_type=self.margin_config.contract_type,
+            contract_size=self.margin_config.contract_size,
             trailing_stop_pct=trailing_stop_pct,
-            highest_price=exec_price,
-            lowest_price=exec_price
+            chandelier_atr=chandelier_atr,
+            chandelier_multiplier=chandelier_multiplier,
+            highest_price=exec_price if side == Side.LONG else 0.0,
+            lowest_price=exec_price if side == Side.SHORT else float('inf')
         )
         self.positions[symbol] = position
         

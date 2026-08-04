@@ -229,6 +229,7 @@ class BacktestEngine:
         self.is_running = False
         self.current_timestamp: Optional[datetime] = None
         self.decisions: List[Dict] = []
+        self.last_regime: str = "UNKNOWN"
         
         log.info(f"🔬 BacktestEngine initialized | {config.symbol} | "
                  f"{config.start_date} to {config.end_date}")
@@ -267,6 +268,11 @@ class BacktestEngine:
             slippage=self.config.slippage,
             commission=self.config.commission
         )
+        self.shadow_portfolio = BacktestPortfolio(
+            initial_capital=self.config.initial_capital,
+            slippage=self.config.slippage,
+            commission=self.config.commission
+        )
         
         # 3. Iterate timestamps
         timestamps = list(self.data_replay.iterate_timestamps(step=self.config.step))
@@ -297,10 +303,13 @@ class BacktestEngine:
                     # Apply funding rate to all positions
                     for symbol in list(self.portfolio.positions.keys()):
                         self.portfolio.apply_funding_fee(symbol, funding_rate, mark_price, timestamp)
+                    for symbol in list(self.shadow_portfolio.positions.keys()):
+                        self.shadow_portfolio.apply_funding_fee(symbol, funding_rate, mark_price, timestamp)
                 
                 # 🆕 Check liquidation
                 prices = {self.config.symbol: current_price}
                 liquidated = self.portfolio.check_liquidation(prices, timestamp)
+                self.shadow_portfolio.check_liquidation(prices, timestamp)
                 if liquidated:
                     log.warning(f"⚠️ Positions liquidated: {liquidated}")
                     continue  # Skip strategy execution after liquidation
@@ -311,10 +320,18 @@ class BacktestEngine:
                 
                 # Execute trade
                 await self._execute_decision(decision, current_price, timestamp)
+                
+                # Execute shadow trade if present
+                if 'shadow_decision' in decision:
+                    await self._execute_decision(decision['shadow_decision'], current_price, timestamp, portfolio_override=self.shadow_portfolio)
 
                 # Intrabar SL/TP after decisions using bar high/low
                 bar = snapshot.live_5m if isinstance(snapshot.live_5m, dict) else {}
                 self.portfolio.check_stop_loss_take_profit_intrabar(
+                    {self.config.symbol: bar},
+                    timestamp
+                )
+                self.shadow_portfolio.check_stop_loss_take_profit_intrabar(
                     {self.config.symbol: bar},
                     timestamp
                 )
@@ -323,9 +340,14 @@ class BacktestEngine:
                 should_record_equity = (i % 12 == 0) or (i == total - 1) or (not is_passive_action(decision.get('action')))
                 if should_record_equity:
                     self.portfolio.record_equity(timestamp, prices)
+                    self.shadow_portfolio.record_equity(timestamp, prices)
                     
-                # Periodic Meta-Optimization (every 144 steps ~ 12 hours on 5m timeframe)
-                if self.meta_optimizer and i > 0 and i % 144 == 0:
+                # Hybrid Meta-Optimization Trigger: Every 24 hours (288 * 5m) OR on Market Regime Change
+                regime = decision.get('regime', 'UNKNOWN')
+                regime_changed = (self.last_regime != "UNKNOWN" and regime != "UNKNOWN" and regime != self.last_regime)
+                self.last_regime = regime
+                
+                if self.meta_optimizer and i > 0 and (i % 288 == 0 or regime_changed):
                     # Get recent trades to evaluate
                     if self.portfolio.trades and len(self.portfolio.trades) >= 5:
                         recent_trades = []
@@ -336,11 +358,21 @@ class BacktestEngine:
                                 'profit_pct': t.pnl_pct,
                                 'reason': t.reason
                             })
+                            
+                        shadow_trades = []
+                        for t in self.shadow_portfolio.trades[-30:]:
+                            shadow_trades.append({
+                                'action': t.action,
+                                'symbol': t.symbol,
+                                'profit_pct': t.pnl_pct,
+                                'reason': t.reason
+                            })
+                            
                         regime = decision.get('regime', 'UNKNOWN')
                         try:
                             # Optimize in background without blocking
                             log.info("🔍 Triggering Meta-Optimizer evaluation...")
-                            self.meta_optimizer.evaluate_and_optimize(recent_trades, regime)
+                            self.meta_optimizer.evaluate_and_optimize(recent_trades, regime, shadow_trades=shadow_trades)
                         except Exception as e:
                             log.error(f"MetaOptimizer evaluation failed: {e}")
                 
@@ -505,13 +537,16 @@ class BacktestEngine:
         self,
         decision: Dict,
         current_price: float,
-        timestamp: datetime
+        timestamp: datetime,
+        portfolio_override: Optional['BacktestPortfolio'] = None
     ):
         """Execute trade决策"""
+        portfolio = portfolio_override or self.portfolio
+        
         action_raw = str(decision.get('action', 'hold'))
         position_side = None
-        if self.config.symbol in self.portfolio.positions:
-            position_side = self.portfolio.positions[self.config.symbol].side.value
+        if self.config.symbol in portfolio.positions:
+            position_side = portfolio.positions[self.config.symbol].side.value
         action = normalize_action(action_raw, position_side=position_side)
         confidence = decision.get('confidence', 0.0)
         if isinstance(confidence, (int, float)) and 0 < confidence <= 1:
@@ -540,19 +575,19 @@ class BacktestEngine:
             action = 'short'
         
         symbol = self.config.symbol
-        has_position = symbol in self.portfolio.positions
+        has_position = symbol in portfolio.positions
         
         # Handle Add Position (Treat as increasing existing position)
         if action == 'add_position' and has_position:
             # Re-map to long/short based on current side
-            current_side = self.portfolio.positions[symbol].side
+            current_side = portfolio.positions[symbol].side
             action = 'long' if current_side == Side.LONG else 'short'
             # Fall through to Open logic
             
         # Handle Reduce Position
         if action == 'reduce_position' and has_position:
             # Partial Close logic
-            current_pos = self.portfolio.positions[symbol]
+            current_pos = portfolio.positions[symbol]
             reduce_pct = 0.5 # Default reduce by 50%
             
             # Check if LLM specified size
@@ -565,7 +600,7 @@ class BacktestEngine:
                 pass
             
             reduce_qty = current_pos.quantity * reduce_pct
-            self.portfolio.close_position(
+            portfolio.close_position(
                 symbol=symbol,
                 price=current_price,
                 timestamp=timestamp,
@@ -578,7 +613,7 @@ class BacktestEngine:
         if (action in ['close_short', 'close_long'] or is_close_action(action)) and has_position:
             # Close Position
             # Validate direction matches if specified (close_short for SHORT, close_long for LONG)
-            current_side = self.portfolio.positions[symbol].side
+            current_side = portfolio.positions[symbol].side
             if action == 'close_short' and current_side != Side.SHORT:
                 log.warning(f"⚠️ close_short signal but position is {current_side}, ignoring")
                 return
@@ -587,7 +622,7 @@ class BacktestEngine:
                 return
             
             # PHASE 2: Enforce Minimum Hold Time (3h) - Hard Block
-            pos = self.portfolio.positions[symbol]
+            pos = portfolio.positions[symbol]
             current_pnl_pct = pos.get_pnl_pct(current_price)
             hold_hours = (timestamp - pos.entry_time).total_seconds() / 3600 if pos.entry_time else 0
             
@@ -602,7 +637,7 @@ class BacktestEngine:
                     log.info(f"🛡️ HOLD ENFORCEMENT: {hold_hours:.1f}h < 3h min hold. PnL={current_pnl_pct:+.2f}%. Blocking close.")
                     return
             
-            self.portfolio.close_position(
+            portfolio.close_position(
                 symbol=symbol,
                 price=current_price,
                 timestamp=timestamp,
@@ -620,8 +655,17 @@ class BacktestEngine:
             sl_pct = params.get('stop_loss_pct') or self.config.stop_loss_pct
             tp_pct = params.get('take_profit_pct') or self.config.take_profit_pct
             trailing_pct = params.get('trailing_stop_pct')
-
-            available_cash = self.portfolio.cash
+            chandelier_atr = params.get('chandelier_atr')
+            chandelier_multiplier = params.get('chandelier_multiplier')
+            
+            # Auto-populate Chandelier Exits if not explicitly disabled
+            if chandelier_atr is None and chandelier_multiplier is None and not trailing_pct:
+                atr_pct = decision.get('atr_pct', 0.0)
+                if atr_pct > 0:
+                    chandelier_atr = current_price * (atr_pct / 100)
+                    chandelier_multiplier = 3.0 # Default Chandelier multiplier
+                    
+            available_cash = portfolio.cash
 
             pos_size_pct = params.get('position_size_pct') or 0
             if pos_size_pct > 0:
@@ -653,7 +697,7 @@ class BacktestEngine:
 
             current_position = None
             if has_position:
-                pos = self.portfolio.positions[symbol]
+                pos = portfolio.positions[symbol]
                 current_position = PositionInfo(
                     symbol=symbol,
                     side=pos.side.value,
@@ -697,10 +741,10 @@ class BacktestEngine:
 
             # 处理反向持仓 (Reversal)
             if has_position:
-                current_side = self.portfolio.positions[symbol].side
+                current_side = portfolio.positions[symbol].side
                 if current_side != side:
                     # 反向信号，先平仓
-                    self.portfolio.close_position(
+                    portfolio.close_position(
                         symbol=symbol,
                         price=current_price,
                         timestamp=timestamp,
@@ -709,7 +753,7 @@ class BacktestEngine:
                     has_position = False # 标记为No position，以便下面执行Open position
 
             if quantity > 0:
-                self.portfolio.open_position(
+                portfolio.open_position(
                     symbol=symbol,
                     side=side,
                     quantity=quantity,
@@ -717,7 +761,9 @@ class BacktestEngine:
                     timestamp=timestamp,
                     stop_loss_pct=sl_pct,
                     take_profit_pct=tp_pct,
-                    trailing_stop_pct=trailing_pct
+                    trailing_stop_pct=trailing_pct,
+                    chandelier_atr=chandelier_atr,
+                    chandelier_multiplier=chandelier_multiplier
                 )
 
     def _get_symbol_trade_stats(self, symbol: str, max_trades: int = 5) -> Dict:

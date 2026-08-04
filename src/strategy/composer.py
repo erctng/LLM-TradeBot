@@ -17,6 +17,8 @@ from src.utils.logger import log
 from src.utils.semantic_converter import SemanticConverter
 from src.agents.regime_detector_agent import RegimeDetector
 from src.agents.trigger_detector_agent import TriggerDetector
+from src.agents.sentiment_agent import SentimentAgent
+from src.agents.multi_period_agent import MultiPeriodParserAgent
 from src.server.state import global_state
 
 class StrategyComposer:
@@ -24,6 +26,11 @@ class StrategyComposer:
         self.use_llm = use_llm
         self.regime_detector = RegimeDetector()
         self.trigger_detector = TriggerDetector()
+        self.multi_period_parser = MultiPeriodParserAgent()
+        
+        # Sentiment analysis (assuming local/remote logic)
+        from src.config import config
+        self.sentiment_agent = SentimentAgent(config)
         
         # ATR Calculator for dynamic TP/SL
         from src.strategy.atr_calculator import ATRCalculator

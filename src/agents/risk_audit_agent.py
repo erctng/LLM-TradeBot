@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from src.utils.logger import log
+from src.agents.meta.meta_labeling_agent import MetaLabelingAgent
 from src.utils.action_protocol import (
     normalize_action,
     is_open_action,
@@ -105,7 +106,12 @@ class RiskAuditAgent:
             'reverse_position_blocks': 0,
             'insufficient_margin_blocks': 0,
             'over_leverage_blocks': 0,
+            'meta_label_blocks': 0,
         }
+        
+        # Meta-Labeling (Second Brain)
+        self.meta_labeler = MetaLabelingAgent()
+        
         log.info("👮 The Guardian initialized")
     
     async def audit_decision(
@@ -251,6 +257,26 @@ class RiskAuditAgent:
                         'total_blocks',
                         f"1h方向过滤拦截: 当前{pos_desc}禁止做空(allow_short=False)"
                     )
+                    
+        # 0.2 Meta-Labeling 预测 (Second Brain)
+        if is_open_action(action) and self.meta_labeler.is_trained:
+            context = {
+                'regime': regime_name,
+                'volatility_atr_pct': atr_pct or 0.0
+            }
+            success_prob = self.meta_labeler.predict_success_probability(decision, context)
+            decision['meta_success_prob'] = success_prob
+            
+            # 如果成功概率太低，且不是强延续信号，则直接拦截
+            if success_prob < 0.40 and not continuation_guard:
+                return self._block_decision(
+                    'meta_label_blocks',
+                    f"Meta-Labeling 预测成功率过低 ({success_prob:.1%}) - 阻止开仓"
+                )
+            elif success_prob < 0.50:
+                warnings.append(f"⚠️ Meta-Labeling 预测成功率偏低 ({success_prob:.1%})")
+            elif success_prob > 0.65:
+                warnings.append(f"🌟 Meta-Labeling 高置信度 ({success_prob:.1%})")
 
         # 0.16 震荡市多周期冲突拦截 (Conflict Veto)
         if is_open_action(action) and self._is_sideways_regime(regime_name):
@@ -534,15 +560,25 @@ class RiskAuditAgent:
                 f"杠杆{leverage}x超过最大限制{self.max_leverage}x"
             )
         
-        # 5. 【仓位检查】单仓位占比
+        # 5. 【仓位检查】单仓位占比 (Fractional Kelly)
+        # 尝试从 decision 提取统计数据（如果有），否则使用默认
+        win_rate = decision.get('historical_win_rate', 0.45)
+        win_loss_ratio = decision.get('historical_win_loss_ratio', 1.5)
+        
         position_check = self._check_position_size(
             quantity=decision.get('quantity', 0),
             entry_price=decision.get('entry_price', current_price),
-            account_balance=account_balance
+            account_balance=account_balance,
+            win_rate=win_rate,
+            win_loss_ratio=win_loss_ratio
         )
         
         if not position_check['passed']:
-            warnings.append(f"⚠️ {position_check['reason']}")
+            if position_check.get('can_fix'):
+                corrections['quantity'] = position_check['corrected_value']
+                warnings.append(f"🔧 {position_check['reason']}")
+            else:
+                warnings.append(f"⚠️ {position_check['reason']}")
         
         # 6. 【风险敞口】总风险检查
         risk_check = self._check_total_risk_exposure(
@@ -875,27 +911,42 @@ class RiskAuditAgent:
         self,
         quantity: float,
         entry_price: float,
-        account_balance: float
+        account_balance: float,
+        win_rate: float = 0.45,
+        win_loss_ratio: float = 1.5
     ) -> Dict:
         """
-        检查单仓位占比是否超标
+        检查单仓位占比是否超标，并应用Fractional Kelly (Half-Kelly)
         
         仓位价值 = 数量 * 价格
         占比 = 仓位价值 / 账户余额
+        Kelly % = W - [(1 - W) / R]
         """
         if account_balance <= 0:
             return {
                 'passed': False,
                 'reason': "账户余额无效(<=0)，无法计算仓位占比"
             }
+            
+        # Calculate Half-Kelly
+        if win_loss_ratio <= 0:
+            kelly_pct = 0.0
+        else:
+            kelly_pct = win_rate - ((1 - win_rate) / win_loss_ratio)
+        half_kelly = max(0.01, kelly_pct / 2) # minimum 1%
+        dynamic_max_pct = min(self.max_position_pct, half_kelly)
 
         position_value = quantity * entry_price
         position_pct = position_value / account_balance
         
-        if position_pct > self.max_position_pct:
+        if position_pct > dynamic_max_pct:
+            # Fix quantity to match dynamic Kelly max
+            corrected_qty = (account_balance * dynamic_max_pct) / entry_price
             return {
                 'passed': False,
-                'reason': f"单仓位占比{position_pct:.2%}超过限制{self.max_position_pct:.2%}"
+                'can_fix': True,
+                'corrected_value': corrected_qty,
+                'reason': f"单仓位占比{position_pct:.2%}超过Kelly限制{dynamic_max_pct:.2%} (Half-Kelly). 修正数量为 {corrected_qty:.4f}"
             }
         
         return {'passed': True}
