@@ -1227,9 +1227,20 @@ class MultiAgentTradingBot:
                 
                 runtime_settings = getattr(global_state, 'agent_settings', None)
                 runtime_agents = runtime_settings.get('agents', {}) if runtime_settings else None
-                if runtime_agents and runtime_agents != self._last_agent_config:
-                    log.info(f"🔧 Runtime agent config updated: {runtime_agents}")
-                    self._apply_agent_config(runtime_agents)
+                if runtime_agents:
+                    # Comparer des formes homogènes. `_last_agent_config` contient
+                    # la carte normalisée (agents activés uniquement) tandis que
+                    # `agent_settings` porte la configuration brute : les comparer
+                    # directement rendait la condition toujours vraie, et tous les
+                    # agents étaient reconstruits à chaque tour de boucle — une
+                    # fois par seconde, indéfiniment, sans qu'aucun cycle ne tourne.
+                    from src.agents.agent_config import AgentConfig
+                    runtime_map = AgentConfig.from_dict(
+                        {'agents': runtime_agents}
+                    ).get_enabled_agents()
+                    if runtime_map != self._last_agent_config:
+                        log.info(f"🔧 Runtime agent config updated: {runtime_map}")
+                        self._apply_agent_config(runtime_map)
 
                 # Check stop state FIRST - must break before continue
                 if global_state.execution_mode == 'Stopped':
