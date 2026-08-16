@@ -40,9 +40,11 @@ KNOWN_DEGRADED = [
     ('Quant API 请求失败: 402', 'API Quant (nofxos.ai) sans crédit — OI/netflow indisponibles'),
 ]
 
-# Le bot ne journalise pas d'étape 1 : le premier marqueur visible d'un cycle
-# est l'étape de décision.
-CYCLE_MARKERS = ('Cycle #', '[Step 3/5]')
+# Un cycle est identifié par son numéro. `[Step 3/5]` se déclenche une fois par
+# symbole analysé : le compter comme un cycle gonfle le total d'un facteur égal
+# au nombre de symboles suivis, et rend la cadence illisible.
+CYCLE_RE = r'Cycle #(\d+)'
+DECISION_MARKER = '[Step 3/5]'
 
 STATE_FILE = 'data/.health_baseline'
 
@@ -92,10 +94,23 @@ def main() -> int:
         logs = ''
 
     # 2. Activité : le bot avance-t-il ?
-    cycles = max(logs.count(m) for m in CYCLE_MARKERS) if logs else 0
+    import re
+
+    cycle_ids = set(re.findall(CYCLE_RE, logs))
+    cycles = len(cycle_ids)
+    decisions = logs.count(DECISION_MARKER)
     print(f'cycles         : {cycles}')
+    print(f'décisions/sym. : {decisions}')
     if cycles == 0:
         anomalies.append(f'aucun cycle en {args.since} min — bot figé ou arrêté')
+    else:
+        # Cadence attendue : ~un cycle toutes les 5 minutes.
+        expected = max(args.since // 5, 1)
+        if cycles > expected * 2:
+            anomalies.append(
+                f'{cycles} cycles pour {expected} attendus — cadence trop rapide, '
+                f'cycles qui se chevauchent ?'
+            )
 
     # 3. Boucle à vide (le défaut observé à 1 Hz)
     reinit = logs.count('run_continuous')
