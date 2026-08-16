@@ -89,6 +89,9 @@ class FourLayerFilterStageRunner:
         if oi_change is None:
             oi_change = 0
         four_layer_result['oi_change'] = oi_change
+        # Provenance de la mesure : open interest réel ou proxy volume. Sans
+        # elle, l'agent trend présente un volume comme de l'open interest.
+        four_layer_result['oi_source'] = oi_fuel.get('oi_source', 'open_interest')
 
         data_anomalies = []
         if abs(oi_change) > 200:

@@ -145,6 +145,25 @@ class OITracker:
         change_pct = ((current_oi - past_oi) / past_oi) * 100
         return round(change_pct, 2)
     
+    def coverage_hours(self, symbol: str) -> float:
+        """Amplitude réelle de l'historique disponible, en heures.
+
+        `get_change_pct` retombe sur l'enregistrement le plus ancien quand la
+        fenêtre demandée n'est pas couverte : avec deux heures d'historique il
+        renvoie donc une « variation 24 h » qui n'en est pas une, sans le
+        signaler. Les appelants doivent vérifier la couverture avant de se fier
+        au résultat.
+        """
+        records = self.history.get(symbol) or []
+        if len(records) < 2:
+            return 0.0
+        span_ms = records[-1]['ts'] - records[0]['ts']
+        return max(span_ms, 0) / (3600 * 1000)
+
+    def has_coverage(self, symbol: str, hours: int = 24, tolerance: float = 0.9) -> bool:
+        """Vrai si l'historique couvre au moins `hours` (à `tolerance` près)."""
+        return self.coverage_hours(symbol) >= hours * tolerance
+
     def get_current_oi(self, symbol: str) -> float:
         """获取当前 OI 值"""
         if symbol in self.history and self.history[symbol]:

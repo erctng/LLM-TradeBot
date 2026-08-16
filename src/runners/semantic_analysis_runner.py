@@ -74,6 +74,7 @@ class SemanticAnalysisRunner:
                 'ema20_1h': context.four_layer_result.get('ema20_1h', context.current_price),
                 'ema60_1h': context.four_layer_result.get('ema60_1h', context.current_price),
                 'oi_change': context.four_layer_result.get('oi_change', 0),
+                'oi_source': context.four_layer_result.get('oi_source', 'open_interest'),
                 'adx': context.four_layer_result.get('adx', 20),
                 'regime': context.four_layer_result.get('regime', 'unknown')
             }
