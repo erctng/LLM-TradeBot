@@ -60,6 +60,7 @@ imputable à l'observation en cours.
 | 22:03 | 6 | 109 | −53,45 | 0 | RAS. |
 | 22:33 | 6 | 109 | −53,45 | 0 | RAS. Mi-parcours : 11 h 36 écoulées sur 24 h, aucun incident nouveau depuis A1. |
 | 23:03 | 6 | 109 | −53,45 | 0 | RAS. |
+| 23:33 | 7 | 109 | −53,45 | **1** | **A2 découverte** — première ligne écrite, colonnes neuves vides. |
 
 ---
 
@@ -141,6 +142,40 @@ sur une information erronée.
 
 **État** : non corrigé — le correctif modifie les entrées d'un agent et donc les
 décisions de trading, décision laissée à l'utilisateur.
+
+---
+
+## A2 — Deux chemins d'écriture contournaient le schéma
+
+**Découverte** : 23:33Z, à la toute première ligne de trade produite pendant
+l'observation (cycle 130, `OPEN_SHORT` BTCUSDT, simulé).
+
+**Symptôme** : la ligne sort avec `price = 0.0` et `side`, `leverage`,
+`stop_loss`, `take_profit`, `fees_paid`, `decision_price`, `regime` tous vides —
+précisément les champs que l'élargissement du schéma devait porter. Seuls `cost`
+et `cycle_id` étaient renseignés.
+
+**Fausse piste écartée** : le conteneur exécutait bien le code corrigé
+(`entry_field='price'` et `_infer_side` présents dans l'image, vérifié par
+`docker exec`).
+
+**Cause racine** : deux appels supplémentaires à `save_trade` dans
+`multi_agent_trading_bot.py` (lignes 693 et 742) court-circuitent complètement
+le runner d'exécution et construisaient leur propre dictionnaire — tous deux
+avec la clé `entry_price`, qui n'est pas une colonne. `save_trade` complétait
+donc `price` par son défaut 0.0. Corriger le runner seul les avait laissés
+intacts.
+
+**Correctif** (`e74c074`) : les trois sites passent par
+`DataSaver.build_trade_record`, qui déduit le côté depuis l'action, estime les
+frais taker sur le notionnel, calcule le slippage face au prix de décision et
+remplit chaque colonne déclarée. Un garde de couplage vérifie que chaque appel
+`save_trade` est adossé à une construction, pour qu'un quatrième site ne puisse
+plus diverger en silence.
+
+**Leçon** : le premier trade réel a invalidé en une ligne ce que 13 h de relevés
+« RAS » n'avaient pas pu tester. Un chemin d'écriture ne se valide qu'en
+l'empruntant.
 
 ---
 
