@@ -100,6 +100,14 @@ class KPIResult:
     # Qualité de la donnée
     cost_data_available: bool
     cost_drag_pct: Optional[float]
+    # Part des trades clôturés portant réellement une donnée de coût. Les
+    # colonnes peuvent exister tout en étant vides sur l'historique antérieur à
+    # leur ajout : une couverture partielle rend les KPI « nets » trompeurs.
+    cost_coverage_pct: float = 0.0
+    total_fees: Optional[float] = None
+    total_funding: Optional[float] = None
+    net_pnl: Optional[float] = None
+    net_expectancy: Optional[float] = None
     notes: List[str] = field(default_factory=list)
 
     # Décomposition
@@ -305,18 +313,43 @@ def compute_kpis(
         excess = annualized - benchmark_annual_pct
         beats = excess > 0
 
-    # Les colonnes de coûts n'existent pas encore dans le stockage : tant
-    # qu'elles manquent, les KPI sont bruts et il faut le dire.
-    cost_cols = {'fees_paid', 'funding_paid', 'slippage_bps'}
-    has_costs = bool(cost_cols & set(trades.columns))
+    # Coûts. Une colonne présente ne signifie pas une donnée présente : après
+    # l'ajout des colonnes au schéma, tout l'historique antérieur les porte
+    # vides. On exige donc une couverture réelle avant d'annoncer des KPI nets.
     cost_drag = None
+    total_fees = total_funding = None
+    net_pnl = net_expectancy = None
+    cost_coverage = 0.0
+
+    fee_series = None
+    if 'fees_paid' in trades.columns:
+        fee_series = pd.to_numeric(trades['fees_paid'], errors='coerce')
+    funding_series = None
+    if 'funding_paid' in trades.columns:
+        funding_series = pd.to_numeric(trades['funding_paid'], errors='coerce')
+
+    if fee_series is not None:
+        documented = fee_series.notna() & (fee_series != 0)
+        cost_coverage = float(documented.mean() * 100) if n else 0.0
+
+    has_costs = cost_coverage > 0
     if has_costs:
-        total_costs = 0.0
-        for col in ('fees_paid', 'funding_paid'):
-            if col in trades.columns:
-                total_costs += float(pd.to_numeric(trades[col], errors='coerce').fillna(0).sum())
+        total_fees = float(fee_series.fillna(0).sum())
+        total_funding = (
+            float(funding_series.fillna(0).sum()) if funding_series is not None else 0.0
+        )
+        total_costs = total_fees + total_funding
         gross = gross_profit + gross_loss
         cost_drag = (total_costs / gross * 100) if gross > 0 else None
+
+        net_pnl = float(total_pnl - total_costs)
+        net_expectancy = net_pnl / n if n else None
+
+        if cost_coverage < 99.0:
+            notes.append(
+                f"Coûts renseignés sur {cost_coverage:.0f}% des trades seulement : "
+                f"le PnL net sous-estime les frais réels sur le reste de l'historique."
+            )
     else:
         notes.append(
             "KPI bruts : le stockage ne contient ni frais ni funding. "
@@ -379,6 +412,11 @@ def compute_kpis(
         beats_benchmark=beats,
         cost_data_available=has_costs,
         cost_drag_pct=round(cost_drag, 4) if cost_drag is not None else None,
+        cost_coverage_pct=round(cost_coverage, 2),
+        total_fees=round(total_fees, 4) if total_fees is not None else None,
+        total_funding=round(total_funding, 4) if total_funding is not None else None,
+        net_pnl=round(net_pnl, 4) if net_pnl is not None else None,
+        net_expectancy=round(net_expectancy, 4) if net_expectancy is not None else None,
         notes=notes,
         by_side=by_side,
     )

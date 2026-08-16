@@ -163,7 +163,9 @@ class ExecutionStageRunner:
             is_close_trade_action=is_close_trade_action,
             open_status='SIMULATED',
             entry_field='entry_price',
-            include_timestamp=True
+            include_timestamp=True,
+            regime=self._regime_label(context),
+            decision_price=context.current_price,
         )
 
         if is_open_action(context.vote_result.action):
@@ -261,7 +263,9 @@ class ExecutionStageRunner:
                 is_close_trade_action=is_close_trade_action,
                 open_status='EXECUTED',
                 entry_field='price',
-                include_timestamp=False
+                include_timestamp=False,
+                regime=self._regime_label(context),
+                decision_price=context.current_price,
             )
 
             emit_global_runtime_event(
@@ -294,6 +298,37 @@ class ExecutionStageRunner:
             'current_price': context.current_price
         }
     
+    # Taux taker Binance USDⓈ-M par défaut. Les frais réels ne remontent pas du
+    # client (le retour d'ordre ne porte pas `commission`), donc ils sont estimés
+    # depuis ce taux et marqués `fees_estimated=1`. Une estimation cohérente vaut
+    # mieux qu'une colonne vide : sans elle, les KPI live restent bruts et ne sont
+    # pas comparables aux KPI nets du backtest.
+    TAKER_FEE_RATE = 0.0004
+
+    def _estimated_fee(self, price: float, quantity: float) -> float:
+        """Frais taker estimés sur une jambe (ouverture ou fermeture)."""
+        try:
+            return abs(float(price) * float(quantity)) * self.TAKER_FEE_RATE
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _infer_side(action: Optional[str]) -> str:
+        normalized = (action or '').upper()
+        if 'SHORT' in normalized:
+            return 'SHORT'
+        if 'LONG' in normalized:
+            return 'LONG'
+        return 'N/A'
+
+    @staticmethod
+    def _regime_label(context) -> str:
+        """Régime de marché au moment de la décision, pour décomposer l'edge."""
+        regime = getattr(getattr(context, 'vote_result', None), 'regime', None)
+        if isinstance(regime, dict):
+            return str(regime.get('type') or regime.get('regime') or 'N/A')
+        return str(regime) if regime else 'N/A'
+
     def _persist_trade_history(
         self,
         *,
@@ -306,9 +341,13 @@ class ExecutionStageRunner:
         is_close_trade_action: bool,
         open_status: str,
         entry_field: str,
-        include_timestamp: bool
+        include_timestamp: bool,
+        exit_reason: Optional[str] = None,
+        regime: Optional[str] = None,
+        decision_price: Optional[float] = None,
     ) -> bool:
         """Persist/merge trade record to storage + in-memory history."""
+        quantity = order_params.get('quantity', 0)
         update_success = False
         if is_close_trade_action:
             update_success = self.saver.update_trade_exit(
@@ -316,7 +355,10 @@ class ExecutionStageRunner:
                 exit_price=exit_price,
                 pnl=pnl,
                 exit_time=datetime.now().strftime("%H:%M:%S"),
-                close_cycle=global_state.cycle_counter
+                close_cycle=global_state.cycle_counter,
+                exit_reason=exit_reason or 'signal',
+                fees_paid=self._estimated_fee(exit_price, quantity),
+                fees_estimated=True,
             )
             if update_success:
                 for trade in global_state.trade_history:
@@ -339,19 +381,38 @@ class ExecutionStageRunner:
                         original_open_cycle = trade.get('open_cycle', 0)
                         break
 
+            reference_price = decision_price if decision_price else entry_price
+            slippage_bps = 0.0
+            if reference_price and entry_price:
+                slippage_bps = (entry_price - reference_price) / reference_price * 10_000
+
             trade_record = {
                 'open_cycle': global_state.cycle_counter if is_open_trade_action else original_open_cycle,
                 'close_cycle': 0 if is_open_trade_action else global_state.cycle_counter,
                 'action': order_params['action'].upper(),
                 'symbol': symbol,
                 entry_field: entry_price,
-                'quantity': order_params['quantity'],
-                'cost': entry_price * order_params['quantity'],
+                'quantity': quantity,
+                'cost': entry_price * quantity,
                 'exit_price': exit_price,
                 'pnl': pnl,
                 'confidence': order_params['confidence'],
                 'status': open_status,
-                'cycle': cycle_id
+                'cycle': cycle_id,
+                # Champs rendant les KPI calculables (voir DataSaver.TRADE_COLUMNS).
+                'side': self._infer_side(order_params.get('action')),
+                'leverage': order_params.get('leverage', 1),
+                'stop_loss': order_params.get('stop_loss')
+                             or order_params.get('stop_loss_price') or 0.0,
+                'take_profit': order_params.get('take_profit')
+                               or order_params.get('take_profit_price') or 0.0,
+                'exit_reason': exit_reason or ('signal' if is_close_trade_action else 'N/A'),
+                'fees_paid': self._estimated_fee(entry_price, quantity),
+                'fees_estimated': 1,
+                'decision_price': reference_price or 0.0,
+                'slippage_bps': round(slippage_bps, 4),
+                'regime': regime or 'N/A',
+                'cycle_id': cycle_id,
             }
             if include_timestamp:
                 trade_record['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

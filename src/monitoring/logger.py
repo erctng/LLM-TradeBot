@@ -215,7 +215,19 @@ class TradingLogger:
         log.info(f"Execution recorded: {execution_result.get('action')}")
     
     def open_trade(self, trade_info: Dict):
-        """开启新交易"""
+        """开启新交易
+
+        ⚠️ N'EST PAS LA SOURCE DE VÉRITÉ DES TRADES.
+
+        La source unique est `data/live/execution/trades/all_trades.csv`, écrit
+        par `DataSaver.save_trade` et lu par `src.analytics.performance`. Cette
+        table SQL n'est alimentée par aucun appelant en production ; elle est
+        conservée pour le déploiement PostgreSQL et pour les tests.
+
+        Ne jamais calculer de KPI depuis la table `trades` : elle est vide, et
+        une télémétrie branchée dessus ne renverrait que des zéros — c'est
+        précisément le défaut qui a été corrigé.
+        """
         sql = text('''
             INSERT INTO trades (
                 open_time, symbol, side, entry_price, quantity, leverage, status
