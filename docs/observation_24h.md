@@ -49,6 +49,17 @@ imputable à l'observation en cours.
 | 16:33 | 6 | 109 | −53,45 | 0 | RAS. Retour à 18 décisions/symbole, confirmant l'effet de bord du tick précédent. |
 | 17:03 | 6 | 109 | −53,45 | 0 | RAS. |
 | 17:33 | 6 | 109 | −53,45 | 0 | RAS. Chaîne du « 0 trade » entièrement expliquée (voir ci-dessous). |
+| 18:03 | 6 | 109 | −53,45 | 0 | RAS. |
+| 18:33 | 6 | 109 | −53,45 | 0 | RAS. Mi-parcours approchant : 7 h 40 sans incident hors A1. |
+| 19:03 | 6 | 109 | −53,45 | 0 | RAS. |
+| 19:33 | 6 | 109 | −53,45 | 0 | RAS. |
+| 20:03 | 6 | 109 | −53,45 | 0 | RAS. |
+| 20:33 | 6 | 109 | −53,45 | 0 | RAS. 10 h d'uptime, cadence parfaitement régulière depuis le départ. |
+| 21:03 | 6 | 109 | −53,45 | 0 | RAS. |
+| 21:33 | 6 | 109 | −53,45 | 0 | RAS. |
+| 22:03 | 6 | 109 | −53,45 | 0 | RAS. |
+| 22:33 | 6 | 109 | −53,45 | 0 | RAS. Mi-parcours : 11 h 36 écoulées sur 24 h, aucun incident nouveau depuis A1. |
+| 23:03 | 6 | 109 | −53,45 | 0 | RAS. |
 
 ---
 

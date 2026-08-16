@@ -675,21 +675,21 @@ class MultiAgentTradingBot:
                 'cycle_id': cycle_id,
             }, suggestion_symbol, cycle_id=cycle_id)
 
-            trade_record = {
-                'open_cycle': global_state.cycle_counter,
-                'close_cycle': 0,
-                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'action': action.upper(),
-                'symbol': suggestion_symbol,
-                'entry_price': current_price,
-                'quantity': quantity,
-                'cost': position_value,
-                'exit_price': 0,
-                'pnl': 0.0,
-                'confidence': order_params.get('confidence'),
-                'status': 'SIMULATED',
-                'cycle': cycle_id,
-            }
+            trade_record = DataSaver.build_trade_record(
+                action=action,
+                symbol=suggestion_symbol,
+                entry_price=current_price,
+                quantity=quantity,
+                status='SIMULATED',
+                confidence=order_params.get('confidence'),
+                open_cycle=global_state.cycle_counter,
+                cycle_id=cycle_id,
+                leverage=order_params.get('leverage', 1),
+                stop_loss=order_params.get('stop_loss') or order_params.get('stop_loss_price'),
+                take_profit=order_params.get('take_profit') or order_params.get('take_profit_price'),
+                decision_price=current_price,
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
             self.saver.save_trade(trade_record)
             global_state.trade_history.insert(0, trade_record)
             if len(global_state.trade_history) > 50:
@@ -724,21 +724,21 @@ class MultiAgentTradingBot:
             return {'status': 'failed', 'action': action, 'details': {'error': 'execution_failed'}}
 
         quantity = float(order_params.get('quantity', 0) or 0)
-        trade_record = {
-            'open_cycle': global_state.cycle_counter,
-            'close_cycle': 0,
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'action': action.upper(),
-            'symbol': suggestion_symbol,
-            'entry_price': current_price,
-            'quantity': quantity,
-            'cost': current_price * quantity,
-            'exit_price': 0,
-            'pnl': 0.0,
-            'confidence': order_params.get('confidence'),
-            'status': 'EXECUTED',
-            'cycle': cycle_id,
-        }
+        trade_record = DataSaver.build_trade_record(
+            action=action,
+            symbol=suggestion_symbol,
+            entry_price=current_price,
+            quantity=quantity,
+            status='EXECUTED',
+            confidence=order_params.get('confidence'),
+            open_cycle=global_state.cycle_counter,
+            cycle_id=cycle_id,
+            leverage=order_params.get('leverage', 1),
+            stop_loss=order_params.get('stop_loss') or order_params.get('stop_loss_price'),
+            take_profit=order_params.get('take_profit') or order_params.get('take_profit_price'),
+            decision_price=current_price,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
         self.saver.save_trade(trade_record)
         global_state.trade_history.insert(0, trade_record)
         if len(global_state.trade_history) > 50:

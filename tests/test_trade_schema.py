@@ -299,3 +299,82 @@ def test_anthropic_base_url_does_not_hijack_another_provider(monkeypatch):
         )
 
     importlib.reload(config_module)
+
+
+# --------------------------------------------------------------------------
+# Constructeur unique d'enregistrement de trade
+# --------------------------------------------------------------------------
+
+def test_builder_writes_entry_price_to_the_real_column():
+    """Trois sites construisaient leur dict à la main ; deux posaient
+    `entry_price`, hors schéma, et le prix d'entrée était perdu."""
+    r = DataSaver.build_trade_record(
+        action='OPEN_SHORT', symbol='BTCUSDT', entry_price=64000.0,
+        quantity=0.01, status='SIMULATED',
+    )
+    assert r['price'] == 64000.0
+    assert 'entry_price' not in r
+
+
+@pytest.mark.parametrize('action,expected', [
+    ('OPEN_SHORT', 'SHORT'), ('open_long', 'LONG'),
+    ('CLOSE_LONG', 'LONG'), ('wait', 'N/A'),
+])
+def test_builder_infers_side_from_action(action, expected):
+    r = DataSaver.build_trade_record(
+        action=action, symbol='BTCUSDT', entry_price=100.0,
+        quantity=1.0, status='SIMULATED',
+    )
+    assert r['side'] == expected
+
+
+def test_builder_populates_every_declared_column():
+    """Aucune colonne du schéma ne doit rester à compléter par défaut."""
+    r = DataSaver.build_trade_record(
+        action='OPEN_LONG', symbol='ETHUSDT', entry_price=3000.0,
+        quantity=2.0, status='EXECUTED', leverage=5,
+        stop_loss=2940.0, take_profit=3120.0, regime='trending',
+        cycle_id='c-1', confidence=80,
+    )
+    optional = {'mae', 'mfe', 'funding_paid'}
+    missing = [c for c in DataSaver.TRADE_COLUMNS
+               if c not in r and c not in optional and c != 'record_time']
+    assert not missing, f'colonnes non renseignées par le constructeur : {missing}'
+
+
+def test_builder_estimates_fees_from_notional():
+    r = DataSaver.build_trade_record(
+        action='OPEN_LONG', symbol='BTCUSDT', entry_price=10_000.0,
+        quantity=1.0, status='EXECUTED',
+    )
+    assert r['fees_paid'] == pytest.approx(4.0)
+    assert r['fees_estimated'] == 1
+
+
+def test_builder_computes_slippage_against_decision_price():
+    r = DataSaver.build_trade_record(
+        action='OPEN_LONG', symbol='BTCUSDT', entry_price=100.5,
+        quantity=1.0, status='EXECUTED', decision_price=100.0,
+    )
+    assert r['slippage_bps'] == pytest.approx(50.0)
+
+
+def test_every_save_trade_call_uses_the_builder():
+    """Garde de couplage : un seul constructeur d'enregistrement.
+
+    Trois sites bâtissaient leur dict à la main et avaient déjà divergé — deux
+    posaient `entry_price`, hors schéma, perdant le prix d'entrée.
+    """
+    import re
+    paths = ('src/trading/multi_agent_trading_bot.py',
+             'src/runners/execution_stage_runner.py')
+    calls = builders = 0
+    for path in paths:
+        src = open(path).read()
+        calls += len(re.findall(r'\.save_trade\(', src))
+        builders += len(re.findall(r'build_trade_record\(', src))
+    assert calls, 'aucun site save_trade trouvé — test obsolète ?'
+    assert builders >= calls, (
+        f'{calls} appels save_trade pour {builders} constructions : '
+        'un site bâtit encore son enregistrement à la main'
+    )

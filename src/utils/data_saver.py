@@ -655,6 +655,84 @@ class DataSaver:
         'fees_estimated', 'decision_price', 'slippage_bps', 'mae', 'mfe',
     }
 
+    # Taux taker Binance USDⓈ-M, utilisé pour estimer les frais quand le retour
+    # d'exécution ne les fournit pas.
+    TAKER_FEE_RATE = 0.0004
+
+    @classmethod
+    def build_trade_record(
+        cls,
+        *,
+        action: str,
+        symbol: str,
+        entry_price: float,
+        quantity: float,
+        status: str,
+        confidence=None,
+        open_cycle: int = 0,
+        close_cycle: int = 0,
+        cycle_id=None,
+        exit_price: float = 0.0,
+        pnl: float = 0.0,
+        leverage=1,
+        stop_loss=0.0,
+        take_profit=0.0,
+        exit_reason=None,
+        regime=None,
+        decision_price=None,
+        timestamp=None,
+    ) -> Dict:
+        """Construit un enregistrement de trade complet.
+
+        Point d'entrée unique : trois sites d'écriture construisaient chacun leur
+        dictionnaire à la main, avec des clés divergentes. Deux d'entre eux
+        posaient `entry_price`, qui n'est pas une colonne — `save_trade`
+        complétait alors `price` par 0.0 et le prix d'entrée était perdu, rendant
+        R-multiple et slippage incalculables. Aucun ne renseignait side, levier,
+        stop, frais ni régime.
+        """
+        normalized = (action or '').upper()
+        side = 'SHORT' if 'SHORT' in normalized else ('LONG' if 'LONG' in normalized else 'N/A')
+
+        reference = decision_price if decision_price else entry_price
+        slippage_bps = 0.0
+        if reference and entry_price:
+            slippage_bps = (float(entry_price) - float(reference)) / float(reference) * 10_000
+
+        try:
+            fees = abs(float(entry_price) * float(quantity)) * cls.TAKER_FEE_RATE
+        except (TypeError, ValueError):
+            fees = 0.0
+
+        record = {
+            'open_cycle': open_cycle,
+            'close_cycle': close_cycle,
+            'action': normalized,
+            'symbol': symbol,
+            'price': entry_price,
+            'quantity': quantity,
+            'cost': (entry_price or 0) * (quantity or 0),
+            'exit_price': exit_price,
+            'pnl': pnl,
+            'confidence': confidence,
+            'status': status,
+            'cycle': cycle_id,
+            'cycle_id': cycle_id,
+            'side': side,
+            'leverage': leverage,
+            'stop_loss': stop_loss or 0.0,
+            'take_profit': take_profit or 0.0,
+            'exit_reason': exit_reason or 'N/A',
+            'fees_paid': fees,
+            'fees_estimated': 1,
+            'decision_price': reference or 0.0,
+            'slippage_bps': round(slippage_bps, 4),
+            'regime': regime or 'N/A',
+        }
+        if timestamp:
+            record['timestamp'] = timestamp
+        return record
+
     def _migrate_trades_schema(self, file_path: str) -> None:
         """Aligne un CSV d'ancien schéma sur `TRADE_COLUMNS`.
 

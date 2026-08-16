@@ -384,43 +384,27 @@ class ExecutionStageRunner:
                         original_open_cycle = trade.get('open_cycle', 0)
                         break
 
-            reference_price = decision_price if decision_price else entry_price
-            slippage_bps = 0.0
-            if reference_price and entry_price:
-                slippage_bps = (entry_price - reference_price) / reference_price * 10_000
-
-            trade_record = {
-                'open_cycle': global_state.cycle_counter if is_open_trade_action else original_open_cycle,
-                'close_cycle': 0 if is_open_trade_action else global_state.cycle_counter,
-                'action': order_params['action'].upper(),
-                'symbol': symbol,
-                entry_field: entry_price,
-                'quantity': quantity,
-                'cost': entry_price * quantity,
-                'exit_price': exit_price,
-                'pnl': pnl,
-                'confidence': order_params['confidence'],
-                'status': open_status,
-                'cycle': cycle_id,
-                # Champs rendant les KPI calculables (voir DataSaver.TRADE_COLUMNS).
-                'side': self._infer_side(order_params.get('action')),
-                'leverage': order_params.get('leverage', 1),
-                'stop_loss': order_params.get('stop_loss')
-                             or order_params.get('stop_loss_price') or 0.0,
-                'take_profit': order_params.get('take_profit')
-                               or order_params.get('take_profit_price') or 0.0,
-                'exit_reason': exit_reason or ('signal' if is_close_trade_action else 'N/A'),
-                'fees_paid': self._estimated_fee(entry_price, quantity),
-                'fees_estimated': 1,
-                'decision_price': reference_price or 0.0,
-                'slippage_bps': round(slippage_bps, 4),
-                'regime': regime or 'N/A',
-                'cycle_id': cycle_id,
-            }
+            trade_record = DataSaver.build_trade_record(
+                action=order_params['action'],
+                symbol=symbol,
+                entry_price=entry_price,
+                quantity=quantity,
+                status='CLOSED (Fallback)' if is_close_trade_action else open_status,
+                confidence=order_params.get('confidence'),
+                open_cycle=global_state.cycle_counter if is_open_trade_action else original_open_cycle,
+                close_cycle=0 if is_open_trade_action else global_state.cycle_counter,
+                cycle_id=cycle_id,
+                exit_price=exit_price,
+                pnl=pnl,
+                leverage=order_params.get('leverage', 1),
+                stop_loss=order_params.get('stop_loss') or order_params.get('stop_loss_price'),
+                take_profit=order_params.get('take_profit') or order_params.get('take_profit_price'),
+                exit_reason=exit_reason or ('signal' if is_close_trade_action else None),
+                regime=regime,
+                decision_price=decision_price,
+            )
             if include_timestamp:
                 trade_record['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if is_close_trade_action:
-                trade_record['status'] = 'CLOSED (Fallback)'
 
             self.saver.save_trade(trade_record)
             global_state.trade_history.insert(0, trade_record)
