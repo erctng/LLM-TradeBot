@@ -37,9 +37,11 @@ class MockMarketSnapshot:
     symbol: str = "BTCUSDT"
 
 
-def create_mock_df(n=100, start_price=100000.0, freq='5T'):
+def create_mock_df(n=100, start_price=100000.0, freq='5min'):
     """Create a realistic mock DataFrame for testing"""
-    idx = pd.date_range(end=pd.Timestamp.utcnow().floor('T'), periods=n, freq=freq)
+    # pandas >= 2.2: 'T'/'H' aliases removed, utcnow() is tz-aware
+    end = pd.Timestamp.now('UTC').tz_localize(None).floor('min')
+    idx = pd.date_range(end=end, periods=n, freq=freq)
     prices = start_price + np.cumsum(np.random.randn(n) * 100)
     
     df = pd.DataFrame({
@@ -56,11 +58,11 @@ def create_mock_df(n=100, start_price=100000.0, freq='5T'):
 def create_mock_snapshot():
     """Create a complete mock snapshot for testing"""
     return MockMarketSnapshot(
-        stable_5m=create_mock_df(100, freq='5T'),
+        stable_5m=create_mock_df(100, freq='5min'),
         live_5m={'open': 100000, 'high': 100100, 'low': 99900, 'close': 100050, 'volume': 500},
-        stable_15m=create_mock_df(100, freq='15T'),
+        stable_15m=create_mock_df(100, freq='15min'),
         live_15m={'open': 100000, 'high': 100100, 'low': 99900, 'close': 100030, 'volume': 1500},
-        stable_1h=create_mock_df(100, freq='1H'),
+        stable_1h=create_mock_df(100, freq='1h'),
         live_1h={'open': 100000, 'high': 100200, 'low': 99800, 'close': 100080, 'volume': 6000},
         timestamp=datetime.now(),
         alignment_ok=True,

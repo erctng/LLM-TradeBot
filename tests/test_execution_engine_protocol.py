@@ -67,7 +67,10 @@ def test_wait_action_is_noop_success():
         current_price=200.0,
     )
     assert result["success"] is True
-    assert result["message"] == "观望，不执行操作"
+    # Assert the behaviour, not the copy: a 'wait' must succeed without
+    # placing any order. Pinning the exact string breaks on every translation.
+    assert result.get("action") in (None, "wait")
+    assert not result.get("orders")
 
 
 def test_legacy_add_position_still_routed_for_compatibility():

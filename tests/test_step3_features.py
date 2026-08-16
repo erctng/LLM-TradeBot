@@ -9,12 +9,18 @@ import pytest
 from src.data.processor import MarketDataProcessor
 
 
-def make_base_df(n=60, start_price=10000.0, freq='5T'):
-    idx = pd.date_range(end=pd.Timestamp.utcnow().floor('T'), periods=n, freq=freq)
+def make_base_df(n=60, start_price=10000.0, freq='5min'):
+    # pandas >= 2.2 removed the 'T' minute alias in favour of 'min', and
+    # Timestamp.utcnow() is now tz-aware — keep the index naive so the
+    # epoch-millisecond conversion below stays valid.
+    end = pd.Timestamp.now('UTC').tz_localize(None).floor('min')
+    idx = pd.date_range(end=end, periods=n, freq=freq)
     prices = start_price + np.cumsum(np.random.randn(n)) * 10
     vols = np.abs(np.random.randn(n) * 100)
     df = pd.DataFrame({
-        'timestamp': idx.astype('int64') // 10**6,
+        # Normalise to ns first: pandas >= 2 may build the index at us/s
+        # resolution, where astype('int64') // 10**6 silently yields 1970 dates.
+        'timestamp': idx.astype('datetime64[ns]').astype('int64') // 10**6,
         'open': prices,
         'high': prices + np.random.rand(n) * 5,
         'low': prices - np.random.rand(n) * 5,

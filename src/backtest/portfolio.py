@@ -81,7 +81,14 @@ class MarginConfig:
     mode: MarginMode = MarginMode.CROSS
     leverage: int = 10
     margin_type: str = "USDT"  # "USDT" 或 "COIN" (币本位)
-    
+
+    # Contract shape, forwarded to every Position opened under this config.
+    # open_position() reads these; without them it raised AttributeError and
+    # no position could ever be opened.
+    contract_type: str = "linear"   # "linear" (U本位) 或 "inverse" (币本位)
+    contract_size: float = 1.0      # 币本位合约面值
+
+
     # Maintenance margin rate (Binance default tiers)
     # Tier 1: 0-50,000 USDT position, maintenance margin 0.4%
     maintenance_margin_rate: float = 0.004  # 0.4%
@@ -100,6 +107,15 @@ class MarginConfig:
         (float('inf'), 0.1), # 20M+: 10%
     ])
     
+    def __post_init__(self):
+        """Keep contract_type consistent with margin_type.
+
+        Two independent fields describing the same thing will drift apart:
+        a COIN-margined config is by definition an inverse contract.
+        """
+        if str(self.margin_type).upper() == "COIN":
+            self.contract_type = "inverse"
+
     def get_maintenance_margin_rate(self, position_value: float) -> float:
         """Get maintenance margin rate by position size"""
         for max_value, rate in self.tiered_margins:
