@@ -239,3 +239,63 @@ def test_cost_drag_is_expressed_against_gross_profit(tmp_path):
     k = compute_kpis(_closed_frame(tmp_path, fees=0.5, funding=0.0, n=4))
     assert k.cost_drag_pct is not None
     assert k.cost_drag_pct > 0
+
+
+# --------------------------------------------------------------------------
+# Prix d'entrée et endpoint LLM — deux régressions observées en exécution réelle
+# --------------------------------------------------------------------------
+
+def test_entry_price_is_recorded_under_the_real_column(saver, trades_csv):
+    """Le champ d'entrée doit porter le nom de la colonne CSV.
+
+    Le mode test écrivait `entry_price`, absent de TRADE_COLUMNS : save_trade
+    complétait alors `price` par 0.0 et les 112 trades simulés de l'historique
+    ont tous un prix d'entrée nul, donc ni R-multiple ni slippage calculables.
+    """
+    saver.save_trade({
+        'action': 'OPEN_LONG', 'symbol': 'BTCUSDT', 'price': 64000.0,
+        'quantity': 0.01, 'cost': 640.0, 'pnl': 0.0, 'confidence': 60,
+        'status': 'SIMULATED', 'side': 'LONG',
+    })
+    row = pd.read_csv(trades_csv).iloc[-1]
+    assert float(row['price']) == pytest.approx(64000.0)
+
+
+def test_entry_field_matches_a_real_column():
+    """Garde de couplage : les deux chemins d'écriture doivent viser `price`."""
+    import re
+    source = open('src/runners/execution_stage_runner.py').read()
+    for field in re.findall(r"entry_field='([^']+)'", source):
+        assert field in DataSaver.TRADE_COLUMNS, (
+            f"entry_field='{field}' n'est pas une colonne : la valeur serait perdue"
+        )
+
+
+def test_anthropic_base_url_does_not_hijack_another_provider(monkeypatch):
+    """Une variable d'environnement tierce ne doit pas détourner l'endpoint.
+
+    ANTHROPIC_BASE_URL est exportée par les outils Anthropic présents sur la
+    machine. Elle écrasait le base_url d'un provider DeepSeek, envoyant chaque
+    appel en 404 et faisant retomber toutes les décisions sur le fallback.
+    """
+    import importlib
+    import src.config as config_module
+
+    monkeypatch.setenv('ANTHROPIC_BASE_URL', 'https://api.anthropic.com')
+    monkeypatch.delenv('LLM_BASE_URL', raising=False)
+
+    # Le provider vient de .env, chargé avec override=True : il n'est pas
+    # pilotable depuis l'environnement du test. On vérifie donc la propriété
+    # sur le provider réellement configuré, qui est celui qui tourne.
+    cfg = importlib.reload(config_module).Config()
+    provider = str(cfg.get('llm.provider', '')).lower()
+    base_url = cfg.get('llm.base_url')
+
+    if provider in ('anthropic', 'claude'):
+        assert base_url == 'https://api.anthropic.com'
+    else:
+        assert base_url != 'https://api.anthropic.com', (
+            f"provider={provider} détourné vers l'endpoint Anthropic"
+        )
+
+    importlib.reload(config_module)

@@ -162,7 +162,10 @@ class ExecutionStageRunner:
             pnl=realized_pnl,
             is_close_trade_action=is_close_trade_action,
             open_status='SIMULATED',
-            entry_field='entry_price',
+            # 'price' est le nom réel de la colonne CSV. Écrire 'entry_price'
+            # laissait le champ hors schéma : save_trade le complétait par 0.0
+            # et tous les trades simulés étaient enregistrés à prix d'entrée nul.
+            entry_field='price',
             include_timestamp=True,
             regime=self._regime_label(context),
             decision_price=context.current_price,
