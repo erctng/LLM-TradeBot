@@ -23,14 +23,22 @@ CONTAINER = os.getenv('BOT_CONTAINER', 'llm-tradebot')
 TRADES_CSV = 'data/live/execution/trades/all_trades.csv'
 
 # Motifs de log qui traduisent une panne réelle, pas du bruit.
+#
+# Jamais de code HTTP nu : « 401 » et « 402 » apparaissent dans les timestamps,
+# les prix et les probabilités, et déclenchaient de fausses alertes. Chaque
+# motif doit contenir du texte propre au message d'erreur.
 ERROR_PATTERNS = [
     ('Payment Required', 'crédit LLM épuisé'),
-    ('401', 'authentification API refusée'),
+    ('鉴权失败', 'authentification API refusée'),
+    ('Unauthorized', 'authentification API refusée'),
+    ('Invalid API-key', 'clé API invalide'),
+    ('Signature for this request', 'signature de requête invalide'),
     ('LLM decision failed', 'décision LLM en échec, repli sur les règles'),
     ('Agent error', 'agent en erreur'),
     ('Traceback', 'exception non gérée'),
     ('CIRCUIT_BREAKER', 'coupe-circuit armé'),
     ('Risk gate check failed', 'porte de risque en erreur'),
+    ('Way too many requests', 'bannissement pour excès de requêtes'),
 ]
 
 # Dégradations connues et déjà diagnostiquées : signalées pour information,

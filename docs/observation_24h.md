@@ -37,6 +37,10 @@ imputable à l'observation en cours.
 | 10:57 | 1 | 109 | −53,45 | 0 | RAS — état initial |
 | 11:03 | 2 | 109 | −53,45 | 0 | RAS. Cadence conforme : 2 cycles en 9 min à `--interval 5`. Aucun trade ouvert (décisions `wait`). |
 | 11:33 | 6 | 109 | −53,45 | 0 | **A1 découverte** (ci-dessous). Bot sain par ailleurs, 0 redémarrage. |
+| 12:03 | 7 | 109 | −53,45 | 0 | RAS. 0 réinit agents. Cumul : 13 cycles, **0 ouverture**, 121 décisions `wait`. Cohérent avec A1. |
+| 12:33 | 6 | 109 | −53,45 | 0 | RAS. Stable, rien de neuf. |
+| 13:03 | 6 | 109 | −53,45 | 0 | RAS. Identique au tick précédent. |
+| 13:33 | 6 | 109 | −53,45 | 0 | Fausse alerte « 401 » — défaut de l'outil, corrigé (voir ci-dessous). Bot RAS. |
 
 ---
 
@@ -88,6 +92,19 @@ sur une information erronée.
 décisions de trading, décision laissée à l'utilisateur.
 
 ---
+
+## Faux positif du relevé — motifs numériques nus
+
+13:33Z — le relevé a signalé « authentification API refusée ». Vérification :
+zéro erreur d'authentification réelle dans les logs. Le motif `'401'` matchait
+les trois chiffres n'importe où, ici à l'intérieur d'un timestamp
+(`13:30:44.914012` → `4012`).
+
+Même classe de défaut que le `'402'` nu corrigé au premier tick. Les motifs
+portent désormais sur le texte propre à chaque message (`鉴权失败`,
+`Unauthorized`, `Invalid API-key`, `Way too many requests`…) et plus jamais sur
+un code HTTP isolé. Un relevé qui crie au loup sur des timestamps est pire
+qu'inutile sur 48 ticks.
 
 ## Incident d'observation
 
