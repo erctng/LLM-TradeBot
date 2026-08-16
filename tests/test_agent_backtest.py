@@ -3,7 +3,7 @@ import asyncio
 import pandas as pd
 import numpy as np
 from src.backtest.agent_wrapper import BacktestAgentRunner
-from src.agents.data_sync_agent import MarketSnapshot
+from src.agents.data_sync import MarketSnapshot
 
 def create_mock_snapshot():
     """Create a mock market snapshot with trending data"""

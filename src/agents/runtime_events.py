@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from src.trading import CycleContext
+if TYPE_CHECKING:
+    # Import différé : src.trading expose MultiAgentTradingBot, qui importe ce
+    # module. Le charger à l'exécution referme le cycle. Les annotations sont
+    # déjà paresseuses via `from __future__ import annotations`.
+    from src.trading import CycleContext
 
 from src.server.state import global_state
 

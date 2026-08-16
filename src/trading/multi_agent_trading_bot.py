@@ -31,7 +31,10 @@ from src.api.ai_trader_client import AITraderClient  # ✅ AI-Trader Sync Module
 from .trading_parameters import TradingParameters
 from .headless_filter import HeadlessFilter
 
-from src.runners import RunnerFactory
+# RunnerFactory est importé à la construction, pas au chargement du module :
+# src.runners.runner_factory importe src.trading, qui expose cette classe. Un
+# import au niveau module referme le cycle et rend tout le package src.runners
+# inimportable seul.
 
 from src.utils.action_protocol import (
     normalize_action,
@@ -167,6 +170,8 @@ class MultiAgentTradingBot:
             print("  ✅ DeepSeek StrategyEngine ready")
         else:
             print("  ⚠️ DeepSeek StrategyEngine not ready (Awaiting API Key)")
+
+        from src.runners import RunnerFactory
 
         self.runner_factory = RunnerFactory(
             self.config,

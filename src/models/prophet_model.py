@@ -9,15 +9,22 @@ Author: AI Trader Team
 Date: 2025-12-21
 """
 
+from __future__ import annotations
+
 import os
 import pickle
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 from datetime import datetime
 import numpy as np
 import pandas as pd
 import time
 
-from src.agents.predict import PredictAgent
+if TYPE_CHECKING:
+    # Import différé : src.agents.predict charge predict_agents_provider, qui
+    # importe ProphetAutoTrainer depuis ce module. Importer PredictAgent à
+    # l'exécution referme le cycle dès que ce module est chargé en premier.
+    from src.agents.predict import PredictAgent
+
 from src.utils.logger import log
 
 # 尝试导入 LightGBM
