@@ -41,6 +41,46 @@ imputable à l'observation en cours.
 | 12:33 | 6 | 109 | −53,45 | 0 | RAS. Stable, rien de neuf. |
 | 13:03 | 6 | 109 | −53,45 | 0 | RAS. Identique au tick précédent. |
 | 13:33 | 6 | 109 | −53,45 | 0 | Fausse alerte « 401 » — défaut de l'outil, corrigé (voir ci-dessous). Bot RAS. |
+| 14:03 | 6 | 109 | −53,45 | 0 | RAS. Premier tick sans faux positif depuis le durcissement des motifs. |
+| 14:33 | 6 | 109 | −53,45 | 0 | RAS. 3 h 40 d'observation, ~43 cycles cumulés, toujours **0 ouverture**. |
+| 15:03 | 7 | 109 | −53,45 | 0 | RAS. |
+| 15:33 | 6 | 109 | −53,45 | 0 | RAS. |
+| 16:03 | 6 | 109 | −53,45 | 0 | RAS. Décisions/symbole à 15 au lieu de 18 : effet de bord de la fenêtre, les 3 symboles sont bien traités. |
+| 16:33 | 6 | 109 | −53,45 | 0 | RAS. Retour à 18 décisions/symbole, confirmant l'effet de bord du tick précédent. |
+| 17:03 | 6 | 109 | −53,45 | 0 | RAS. |
+| 17:33 | 6 | 109 | −53,45 | 0 | RAS. Chaîne du « 0 trade » entièrement expliquée (voir ci-dessous). |
+
+---
+
+## Pourquoi zéro trade en 6 h 40 — chaîne complète
+
+Cumul sur 69 cycles / 207 décisions :
+
+| Étape | Résultat |
+|---|---|
+| Couche L4 (déclencheur 5 m) | 19 passages sur 207 — **9,2 %** |
+| Verdict des 4 couches | 19 `SHORT`, 188 `WAIT` |
+| Décision finale du LLM | **1** `OPEN_SHORT`, 206 `WAIT` — confiance moyenne 38 % |
+| Audit de risque | le seul `OPEN_SHORT` **bloqué** |
+| Trades écrits | **0** |
+
+Le blocage final n'est pas un défaut : *« ETHUSDT空头连续亏损3次，触发冷却 »* —
+cooldown déclenché après 3 pertes consécutives sur les shorts ETH. Le garde-fou
+fait exactement son travail, et il vise précisément le côté qui concentre 78 %
+des pertes historiques.
+
+Trois filtres en série expliquent donc l'absence de trade, et **un seul est
+défectueux** :
+
+1. **L4 bloque 91 % des cycles** — sain sur le principe, mais le narratif fourni
+   au LLM sur cette couche est faux (A1).
+2. **Le LLM rejette 18 des 19 signaux restants**, à 38 % de confiance moyenne.
+   Cohérent avec A1 : il lit un volume relatif sous-évalué.
+3. **L'audit de risque bloque le dernier** — comportement correct et souhaitable.
+
+Conclusion provisoire : le bot ne trade pas parce qu'il est *correctement*
+prudent sur deux étages et *incorrectement* informé sur un troisième. Corriger
+A1 est le seul levier qui change quelque chose sans toucher aux garde-fous.
 
 ---
 
