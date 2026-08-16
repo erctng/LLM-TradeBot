@@ -90,6 +90,12 @@ class MultiAgentTradingBot:
         # 初始化客户端
         self.risk_manager = RiskManager()
         self.execution_engine = ExecutionEngine(self.client, self.risk_manager)
+
+        # 🛡️ Feed risk state on every recorded trade so the circuit breakers
+        # (consecutive losses / drawdown) actually accumulate. Without this the
+        # counters stay at zero and the breakers can never fire.
+        global_state.register_trade_observer(self._on_trade_recorded)
+        global_state.set_risk_gate(self.risk_manager.check_circuit_breakers)
         self.saver = DataSaver() # ✅ 初始化 Multi-Agent 数据保存器
         
         # 🧹 启动时清除历史实盘数据，只保留当前周期
@@ -580,6 +586,24 @@ class MultiAgentTradingBot:
             })
         except Exception as e:
             log.error(f"Cycle log insert failed: {e}")
+
+    def _on_trade_recorded(self, trade: Dict, equity: float, peak_equity: float):
+        """Feed risk state from every recorded trade.
+
+        Registered on global_state at construction. Closed trades drive the
+        consecutive-loss counter; every record refreshes the drawdown figure.
+        Both feed check_circuit_breakers() before any new position is opened.
+        """
+        try:
+            self.risk_manager.record_trade(trade)
+            self.risk_manager.update_drawdown(equity, peak_equity)
+
+            allowed, reason = self.risk_manager.check_circuit_breakers()
+            if not allowed:
+                global_state.add_log(f"[🛡️ CIRCUIT_BREAKER] {reason}")
+                log.warning(f"Circuit breaker armed: {reason}")
+        except Exception as e:
+            log.error(f"Risk state update failed: {e}")
 
     def _execute_suggested_open_trade(self, symbol: str, suggested: Any, cycle_id: Optional[str]) -> Dict:
         """Execute an already-audited open suggestion without re-running full analysis."""

@@ -238,15 +238,22 @@ class TradingLogger:
         with self.engine.begin() as conn:
             # 1. 查找最近的未关闭交易
             select_sql = text('''
-                SELECT id, entry_price FROM trades
+                SELECT id, entry_price, side, leverage FROM trades
                 WHERE symbol = :symbol AND status = 'OPEN'
                 ORDER BY id DESC LIMIT 1
             ''')
             result = conn.execute(select_sql, {'symbol': symbol}).fetchone()
-            
+
             if result:
-                trade_id, entry_price = result
-                pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+                trade_id, entry_price, side, leverage = result
+                # Direction matters: a profitable SHORT has exit < entry. Without
+                # this sign, every short trade is reported with an inverted return.
+                direction = -1.0 if str(side).upper() in ('SHORT', 'SELL') else 1.0
+                lev = float(leverage or 1) or 1.0
+                if entry_price:
+                    pnl_pct = direction * ((exit_price - entry_price) / entry_price) * 100 * lev
+                else:
+                    pnl_pct = 0.0
                 
                 # 2. 更新交易状态
                 update_sql = text('''

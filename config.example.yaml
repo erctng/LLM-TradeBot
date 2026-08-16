@@ -31,6 +31,10 @@ trading:
   primary_symbol: "BTCUSDT"  # 主要交易对（向后兼容）
   timeframes: ["1m", "5m", "15m", "1h"]
   leverage: 5
+  # 下单参数的唯一真源。CLI 参数仅作为显式覆盖，不再有硬编码默认值。
+  max_position_size: 100.0
+  stop_loss_pct: 1.0
+  take_profit_pct: 2.0
   symbol_blacklist: []  # 可选：禁用高风险/低流动性币种
   selector_min_quote_volume: 5000000  # 24h USDT成交额下限
   selector_min_price: 0.05  # 过滤超低价币种
@@ -41,7 +45,9 @@ risk:
   max_risk_per_trade_pct: 1.5  # 单笔最大风险
   max_total_position_pct: 33.3  # 最大总仓位
   max_leverage: 5
-  max_consecutive_losses: 3
+  # 需按实盘连亏分布校准。胜率 41% 时，连续 3 次亏损纯属偶然的概率约 20%，
+  # 阈值定在 3 会在没有任何真实退化信号的情况下频繁停机。
+  max_consecutive_losses: 6
   stop_trading_on_drawdown_pct: 10.0
   max_holding_cycles: 180  # 最大持仓周期硬上限 (≈ 9h if cycle_interval=3m)
 

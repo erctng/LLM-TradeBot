@@ -509,25 +509,66 @@ class RiskManager:
         # 四舍五入到2位小数（BTCUSDT的价格精度）
         return round(price, 2)
     
+    @staticmethod
+    def _is_closing_trade(trade: Dict) -> bool:
+        """一笔记录是否代表已平仓交易（只有平仓才计入连亏统计）"""
+        status = str(trade.get('status', '')).upper()
+        if 'CLOSED' in status:
+            return True
+        action = normalize_action(trade.get('action', '')) or ''
+        return action.startswith('close')
+
     def record_trade(self, trade: Dict):
-        """记录交易结果"""
+        """记录交易结果
+
+        只有已平仓交易才更新连续亏损计数。开仓记录的 pnl 为 0，
+        若一并计入会把连亏计数错误清零，使熔断永远无法触发。
+        """
         self.trade_history.append(trade)
-        
-        # 更新连续亏损计数
-        if trade.get('pnl', 0) < 0:
+
+        if not self._is_closing_trade(trade):
+            return
+
+        pnl = trade.get('pnl')
+        if pnl is None:
+            return
+
+        if float(pnl) < 0:
             self.consecutive_losses += 1
         else:
             self.consecutive_losses = 0
-        
-        log.info(f"交易记录: PnL={trade.get('pnl', 0):.2f}, 连续亏损={self.consecutive_losses}")
-    
+
+        log.info(f"交易记录: PnL={float(pnl):.2f}, 连续亏损={self.consecutive_losses}")
+
     def update_drawdown(self, current_balance: float, peak_balance: float):
         """更新回撤"""
         if peak_balance > 0:
-            self.total_drawdown_pct = ((peak_balance - current_balance) / peak_balance) * 100
-        
+            self.total_drawdown_pct = max(
+                0.0, ((peak_balance - current_balance) / peak_balance) * 100
+            )
+
         if self.total_drawdown_pct > 0:
             log.warning(f"当前回撤: {self.total_drawdown_pct:.2f}%")
+
+    def check_circuit_breakers(self) -> Tuple[bool, str]:
+        """开仓前的熔断检查。
+
+        返回 (allowed, reason)。平仓不受此检查约束——任何情况下都必须
+        允许离场，否则熔断会把仓位锁死在市场里。
+        """
+        if self.consecutive_losses >= self.max_consecutive_losses:
+            return False, (
+                f"连续亏损 {self.consecutive_losses} 次 "
+                f"(上限 {self.max_consecutive_losses})，暂停开仓"
+            )
+
+        if self.total_drawdown_pct >= self.stop_trading_drawdown_pct:
+            return False, (
+                f"账户回撤 {self.total_drawdown_pct:.2f}% "
+                f"(上限 {self.stop_trading_drawdown_pct}%)，暂停开仓"
+            )
+
+        return True, ""
     
     def get_risk_status(self) -> Dict:
         """获取风险状态"""

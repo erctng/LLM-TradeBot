@@ -60,6 +60,21 @@ class ExecutionStageRunner:
                 'details': {'reason': veto_reason, 'stage': 'execution_gate'},
                 'current_price': context.current_price
             }
+
+        # 🛡️ Circuit breakers: block NEW positions only. Closing must always be
+        # allowed — a breaker that blocks exits would trap capital in the market.
+        gate_action = context.order_params.get('action', context.vote_result.action)
+        if is_open_action(gate_action):
+            allowed, breaker_reason = global_state.check_risk_gate()
+            if not allowed:
+                global_state.add_log(f"[🛡️ CIRCUIT_BREAKER] {breaker_reason}")
+                log.warning(f"Open blocked by circuit breaker: {breaker_reason}")
+                return {
+                    'status': 'blocked',
+                    'action': gate_action,
+                    'details': {'reason': breaker_reason, 'stage': 'circuit_breaker'},
+                    'current_price': context.current_price
+                }
         
         emit_global_runtime_event(
             context,

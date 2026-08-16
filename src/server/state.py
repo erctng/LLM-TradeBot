@@ -70,6 +70,7 @@ class SharedState:
     equity_history: List[Dict] = field(default_factory=list)  # [{'time': '12:00', 'value': 1000}, ...]
     balance_history: List[Dict] = field(default_factory=list)  # [{time, balance, pnl, action}]
     initial_balance: float = 0.0  # Initial balance when trading started
+    peak_equity: float = 0.0  # Highest equity ever reached (drawdown reference)
     
     # Latest Decision & History
     latest_decision: Dict[str, Any] = field(default_factory=dict) # Keyed by symbol now
@@ -104,6 +105,8 @@ class SharedState:
     llm_info: Dict[str, str] = field(default_factory=dict)
     agent_settings: Dict[str, Any] = field(default_factory=dict)
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+    _trade_observers: List[Any] = field(default_factory=list, init=False, repr=False)
+    _risk_gate: Optional[Any] = field(default=None, init=False, repr=False)
 
     def locked(self):
         """Expose state lock for atomic external read/write blocks."""
@@ -298,6 +301,55 @@ class SharedState:
             # Keep last 500 balance points
             if len(self.balance_history) > 500:
                 self.balance_history.pop(0)
+
+            # Track peak equity so drawdown observers have a reference point
+            if current_balance > self.peak_equity:
+                self.peak_equity = current_balance
+
+            observers = list(self._trade_observers)
+            equity_snapshot = (current_balance, self.peak_equity)
+
+        # Notify outside the lock: observers must never be able to deadlock state
+        for observer in observers:
+            try:
+                observer(trade, equity_snapshot[0], equity_snapshot[1])
+            except Exception as exc:  # pragma: no cover - defensive
+                log.error(f"Trade observer failed: {exc}")
+
+    def set_risk_gate(self, gate):
+        """Register the pre-open circuit breaker check.
+
+        `gate` is a callable returning (allowed: bool, reason: str). Kept as a
+        plain callable so the execution path can consult risk state without
+        importing the risk module.
+        """
+        with self._lock:
+            self._risk_gate = gate
+
+    def check_risk_gate(self):
+        """Consult the circuit breakers. Returns (allowed, reason).
+
+        Fails open when no gate is registered (e.g. backtest harness), so the
+        absence of wiring never silently blocks trading.
+        """
+        gate = self._risk_gate
+        if gate is None:
+            return True, ""
+        try:
+            return gate()
+        except Exception as exc:  # pragma: no cover - defensive
+            log.error(f"Risk gate check failed, allowing trade: {exc}")
+            return True, ""
+
+    def register_trade_observer(self, observer):
+        """Register a callback invoked as observer(trade, equity, peak_equity).
+
+        Used to feed risk state (consecutive losses, drawdown) without coupling
+        the shared state to the risk module.
+        """
+        with self._lock:
+            if observer not in self._trade_observers:
+                self._trade_observers.append(observer)
     
     def record_account_success(self):
         """Record successful account info fetch"""
