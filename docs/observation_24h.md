@@ -63,6 +63,7 @@ imputable à l'observation en cours.
 | 23:33 | 7 | 109 | −53,45 | **1** | **A2 découverte** — première ligne écrite, colonnes neuves vides. |
 | 00:03 | 6 | 109 | −53,45 | 1 | A2 persiste (correctif non déployé). Bot passé en gestion de position : analyse concentrée sur BTCUSDT seul, comportement normal. |
 | 00:33 | 7 | 109 | −53,45 | 1 | RAS. A2 basculé en dégradation connue le temps du report — sentinelle `data/.a2_deferred`, à supprimer après redéploiement. |
+| 01:03 | 7 | 109 | −53,45 | 1 | **A3 découverte** — réentraînement Prophet sauté sur les 3 symboles (rate limit). |
 
 ---
 
@@ -184,6 +185,42 @@ pour ne pas casser la continuité de l'observation. Le conteneur continue donc
 d'écrire des lignes incomplètes jusqu'à ~11:00Z ; ces lignes sont identifiables
 par `price = 0` et resteront inexploitables pour le R-multiple et le slippage.
 Redéploiement prévu dans la synthèse finale.
+
+---
+
+## A3 — Le réentraînement du modèle est sauté en silence
+
+**Découverte** : 01:03Z, via le motif `Way too many requests` ajouté lors du
+durcissement du relevé à 13:33 — un motif qui n'existait pas au lancement.
+
+**Fait** : à 01:02:34-35, l'auto-entraîneur Prophet a échoué sur les **trois**
+symboles avec `APIError(code=-1003): Way too many requests`, puis a journalisé
+`数据不足，跳过训练 (当前: 0)` pour chacun. La première requête revient déjà
+vide : le bannissement était actif avant le début du lot.
+
+**Ce qui n'est pas en cause** : le rythme de récupération existe bien —
+`_fetch_data` découpe en lots de 1000 avec `time.sleep(0.2)` entre chaque
+(correctif `c43a97b`). Ce n'est pas une boucle de retry non plus : les trois
+appels rapprochés sont trois symboles distincts, pas trois tentatives.
+
+**Les deux vrais défauts** :
+
+1. **Aucune prise en compte du bannissement entre symboles.** Le premier
+   `-1003` devrait interrompre toute la ronde d'entraînement. À la place, la
+   boucle enchaîne les deux symboles suivants et ajoute des requêtes pendant un
+   ban actif, ce qui ne peut que le prolonger.
+2. **Dégradation silencieuse.** L'échec ne produit qu'un `WARNING`. Le modèle
+   en mémoire reste celui de la ronde précédente et vieillit sans que rien ne le
+   signale. Cumulé à K2 (AUC validation 0,5623, à peine au-dessus du hasard),
+   un modèle qui cesse d'être réentraîné sans alerte est un angle mort réel.
+
+**Impact observé** : circonscrit. 3 occurrences, toutes dans la fenêtre de
+01:02. Le bot continue de cycler normalement (Cycle #149) et conserve son modèle
+précédent. Aucune décision de trading n'a été perdue.
+
+**État** : non corrigé, à traiter avec le redéploiement de fin d'observation.
+Correctif proposé : interrompre la ronde au premier `-1003` et remonter l'échec
+au niveau d'une alerte, pas d'un warning.
 
 ---
 
