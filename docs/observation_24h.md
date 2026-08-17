@@ -61,6 +61,7 @@ imputable à l'observation en cours.
 | 22:33 | 6 | 109 | −53,45 | 0 | RAS. Mi-parcours : 11 h 36 écoulées sur 24 h, aucun incident nouveau depuis A1. |
 | 23:03 | 6 | 109 | −53,45 | 0 | RAS. |
 | 23:33 | 7 | 109 | −53,45 | **1** | **A2 découverte** — première ligne écrite, colonnes neuves vides. |
+| 00:03 | 6 | 109 | −53,45 | 1 | A2 persiste (correctif non déployé). Bot passé en gestion de position : analyse concentrée sur BTCUSDT seul, comportement normal. |
 
 ---
 
@@ -176,6 +177,12 @@ plus diverger en silence.
 **Leçon** : le premier trade réel a invalidé en une ligne ce que 13 h de relevés
 « RAS » n'avaient pas pu tester. Un chemin d'écriture ne se valide qu'en
 l'empruntant.
+
+**Déploiement** : décision prise de **ne pas redéployer avant la fin des 24 h**,
+pour ne pas casser la continuité de l'observation. Le conteneur continue donc
+d'écrire des lignes incomplètes jusqu'à ~11:00Z ; ces lignes sont identifiables
+par `price = 0` et resteront inexploitables pour le R-multiple et le slippage.
+Redéploiement prévu dans la synthèse finale.
 
 ---
 
