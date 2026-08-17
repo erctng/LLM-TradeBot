@@ -26,7 +26,6 @@ class SemanticAnalysisRunner:
         self.agent_config = agent_config
         self.agent_provider = agent_provider
       
-    @log_run
     @staticmethod
     def _trigger_rvol(context) -> float:
         """Volume relatif 5 m réellement évalué par la couche L4.
@@ -60,6 +59,7 @@ class SemanticAnalysisRunner:
         # Neutre : ni signal de rupture, ni signal d'assèchement.
         return 1.0
 
+    @log_run
     async def run(
         self,
         context: CycleContext,

@@ -161,3 +161,27 @@ def test_training_loop_aborts_the_round_on_a_ban():
         "l'échec doit remonter en erreur, pas en warning : un modèle qui cesse "
         "d'être réentraîné en silence est un angle mort"
     )
+
+
+def test_helper_is_callable_the_way_production_calls_it():
+    """Appel via une instance, pas via la classe.
+
+    Les tests précédents passaient par `SemanticAnalysisRunner._trigger_rvol(ctx)`,
+    ce qui fonctionne même si le décorateur `@staticmethod` manque. Le code
+    appelle `self._trigger_rvol(context)` : sans le décorateur, `self` compte
+    comme premier argument et l'appel lève. Le défaut est passé en production.
+    """
+    runner = SemanticAnalysisRunner.__new__(SemanticAnalysisRunner)
+    ctx = _context(four_layer={'trigger_rvol': 1.8})
+    assert runner._trigger_rvol(ctx) == pytest.approx(1.8)
+
+
+def test_run_kept_its_instrumentation():
+    """Le helper s'était inséré entre `@log_run` et `run`, privant `run` de son
+    décorateur — une instrumentation perdue en silence."""
+    import inspect
+    src = inspect.getsource(SemanticAnalysisRunner)
+    run_at = src.index('async def run(')
+    assert '@log_run' in src[max(0, run_at - 120):run_at], (
+        "`run` a perdu son décorateur @log_run"
+    )
