@@ -111,9 +111,30 @@ trois fichiers de l'image, constructeur vérifié en conteneur — `price`, `sid
 `slippage_bps`, `regime` tous renseignés, aucune colonne manquante. Sentinelle
 `data/.a2_deferred` supprimée : la détection complète est réactivée.
 
-**Restent ouverts** : A1 (RVOL 15 m présenté comme 5 m), A3 (ronde
-d'entraînement non interrompue sur `-1003`, échec en warning), K1 (API Quant
-sans crédit), K2 (AUC validation 0,5623).
+**Restent ouverts** : K1 (API Quant sans crédit), K2 (AUC validation 0,5623).
+
+---
+
+## Suite — A1 et A3 corrigés et déployés (17 août, 23:5xZ)
+
+| Anomalie | Correctif | Commit |
+|---|---|---|
+| A1 | L'agent trigger reçoit `four_layer_result['trigger_rvol']`, la valeur que L4 a réellement évaluée. Repli recalculé sur le 5 m quand le détecteur est désactivé, valeur neutre 1,0 si l'historique est trop court ou le volume moyen nul. | `933eaf4` |
+| A3 | `_fetch_data` lève `RateLimitedError` sur `-1003`, la ronde s'interrompt au premier bannissement, l'échec remonte en `ERROR`. | `933eaf4` |
+| Régression introduite par A1 | Le helper s'était inséré entre `@log_run` et `run`, privant `run` de son instrumentation et faisant lever l'appel en production. | `57ef79b` |
+
+**Leçon supplémentaire** : les tests d'A1 appelaient
+`SemanticAnalysisRunner._trigger_rvol(ctx)` **sur la classe**, ce qui fonctionne
+même sans `@staticmethod`. La production appelle `self._trigger_rvol(context)`.
+Les 13 tests passaient pendant que le code était cassé — un test doit emprunter
+le même chemin d'appel que le code. Deux tests ajoutés : appel via instance, et
+vérification que `run` conserve son décorateur.
+
+**Vérification post-déploiement** : 0 erreur, repli validé sur données réelles
+(0,119 calculé sur du 5 m SOLUSDT), RVOL transmis désormais issu de la bonne
+source. Sur les 4 premiers échantillons — 0,2 / 0,3 / 0,7 / 1,0 — **rien ne
+permet encore de conclure à un changement de comportement** : c'est l'objet du
+test de plusieurs jours à venir.
 
 ---
 
