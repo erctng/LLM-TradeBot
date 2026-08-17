@@ -67,6 +67,20 @@ imputable à l'observation en cours.
 | 01:33 | 6 | 109 | −53,45 | 1 | Pas de récidive d'A3 (0 sur 20 min). Relevé enrichi de l'horodatage des erreurs, la fenêtre de 35 min faisant réalerter un même incident au tick suivant. |
 | 02:03 | 7 | 109 | −53,45 | 1 | RAS. A3 sorti de la fenêtre, aucune récidive. |
 | 02:33 | 6 | **110** | **−54,76** | 1 | RAS. **Premier aller-retour complet** : clôture du SHORT BTCUSDT à −1,31. Premier PnL net calculé. Confirme A2 (voir ci-dessous). |
+| 03:03 | 7 | 110 | −54,76 | 1 | RAS. Position clôturée, retour au balayage des 3 symboles (17 décisions). |
+| 03:33 | 6 | 110 | −54,76 | 1 | RAS. |
+| 04:03 | 6 | 110 | −54,76 | 1 | RAS. |
+| 04:33 | 6 | 110 | −54,76 | 1 | RAS. |
+| 05:03 | 7 | 110 | −54,76 | 1 | RAS. |
+| 05:33 | 6 | 110 | −54,76 | 1 | RAS. |
+| 06:03 | 6 | 110 | −54,76 | 1 | RAS. |
+| 06:33 | 6 | 110 | −54,76 | 1 | RAS. |
+| 07:03 | 6 | 110 | −54,76 | 1 | RAS. |
+| 07:33 | 6 | 110 | −54,76 | 1 | RAS. |
+| 08:03 | 6 | 110 | −54,76 | 1 | RAS. |
+| 08:33 | 6 | 110 | −54,76 | 1 | RAS. |
+| 09:03 | 6 | 110 | −54,76 | 1 | RAS. |
+| 09:33 | 6 | 110 | −54,76 | 1 | **A3 récidive** à 09:06 (2 occurrences). Intermittent, non aggravé — voir fréquence ci-dessous. |
 
 ---
 
@@ -242,6 +256,21 @@ appels rapprochés sont trois symboles distincts, pas trois tentatives.
 **Impact observé** : circonscrit. 3 occurrences, toutes dans la fenêtre de
 01:02. Le bot continue de cycler normalement (Cycle #149) et conserve son modèle
 précédent. Aucune décision de trading n'a été perdue.
+
+### Fréquence mesurée sur 22 h (relevé de 09:33Z)
+
+| Occurrence | Horodatage | Symboles touchés |
+|---|---|---|
+| 1 | 01:02:34 → 01:02:35 | 3 (burst de 2 s) |
+| 2 | 09:06:29 → 09:06:55 | 2 (espacé de 26 s) |
+
+12 rondes d'entraînement sur la période, soit **36 tentatives par symbole, dont
+5 échecs — environ 14 %**. Le défaut est donc **intermittent et non aggravé** :
+il ne s'auto-entretient pas, et l'espacement plus large de la seconde occurrence
+suggère que la récupération avait partiellement progressé avant de buter.
+
+L'horodatage ajouté au relevé à 01:33 a permis de trancher immédiatement entre
+récidive et rappel de fenêtre — sans lui, ce tick aurait été ambigu.
 
 **État** : non corrigé, à traiter avec le redéploiement de fin d'observation.
 Correctif proposé : interrompre la ronde au premier `-1003` et remonter l'échec
