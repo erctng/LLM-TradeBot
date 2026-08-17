@@ -129,9 +129,20 @@ def main() -> int:
     # 4. Erreurs
     for pattern, label in ERROR_PATTERNS:
         n = logs.count(pattern)
-        if n:
-            print(f'  {pattern:<24} x{n}  ({label})')
-            anomalies.append(f'{label} — {n} occurrence(s)')
+        if not n:
+            continue
+        # La fenêtre (35 min) dépasse la cadence des relevés (30 min) : sans
+        # horodatage, un même incident réalerte au tick suivant et se confond
+        # avec une récidive. On remonte l'heure de la dernière occurrence.
+        last = ''
+        for line in reversed(logs.splitlines()):
+            if pattern in line:
+                stamp = re.search(r'\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2})', line)
+                if stamp:
+                    last = f' — dernière à {stamp.group(1)}'
+                break
+        print(f'  {pattern:<24} x{n}  ({label}){last}')
+        anomalies.append(f'{label} — {n} occurrence(s){last}')
 
     for pattern, label in KNOWN_DEGRADED:
         n = logs.count(pattern)

@@ -64,6 +64,7 @@ imputable à l'observation en cours.
 | 00:03 | 6 | 109 | −53,45 | 1 | A2 persiste (correctif non déployé). Bot passé en gestion de position : analyse concentrée sur BTCUSDT seul, comportement normal. |
 | 00:33 | 7 | 109 | −53,45 | 1 | RAS. A2 basculé en dégradation connue le temps du report — sentinelle `data/.a2_deferred`, à supprimer après redéploiement. |
 | 01:03 | 7 | 109 | −53,45 | 1 | **A3 découverte** — réentraînement Prophet sauté sur les 3 symboles (rate limit). |
+| 01:33 | 6 | 109 | −53,45 | 1 | Pas de récidive d'A3 (0 sur 20 min). Relevé enrichi de l'horodatage des erreurs, la fenêtre de 35 min faisant réalerter un même incident au tick suivant. |
 
 ---
 
