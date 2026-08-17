@@ -81,6 +81,39 @@ imputable à l'observation en cours.
 | 08:33 | 6 | 110 | −54,76 | 1 | RAS. |
 | 09:03 | 6 | 110 | −54,76 | 1 | RAS. |
 | 09:33 | 6 | 110 | −54,76 | 1 | **A3 récidive** à 09:06 (2 occurrences). Intermittent, non aggravé — voir fréquence ci-dessous. |
+| 10:03 | 6 | 110 | −54,76 | 1 | RAS. A3 sorti de la fenêtre sans nouvelle occurrence. |
+| 10:33 | 6 | 110 | −54,76 | 1 | RAS. Dernier tick de routine — 23 h 37 écoulées, échéance des 24 h à 10:56:38Z. |
+| **11:03** | 6 | 110 | −54,76 | 1 | **Clôture.** RAS. Boucle arrêtée (job `3193fc6f`), correctif A2 redéployé et vérifié, sentinelle supprimée. |
+
+---
+
+## Clôture — 11:03Z
+
+**Durée** : 24 h 07 (10:56:38Z → 11:03Z). **255 cycles**, 0 redémarrage,
+conteneur `healthy` de bout en bout.
+
+| Mesure | Valeur |
+|---|---|
+| Cycles exécutés | 255 |
+| Décisions | 683 `WAIT`, 3 `OPEN_SHORT`, 7 `CLOSE_SHORT` |
+| Couche L4 | 48 passages sur 693 — **6,9 %** |
+| Blocages par l'audit de risque | 7 |
+| Allers-retours complets | **1** (SHORT BTCUSDT, −1,31) |
+| Erreurs rate limit | 5 |
+| Échecs LLM / tracebacks | **0 / 0** |
+
+KPI de sortie : 110 trades clos, PnL −54,76, win rate 40,9 %,
+espérance −0,4978, max drawdown 4,85 %.
+
+**Redéploiement A2** : image reconstruite, `build_trade_record` présent dans les
+trois fichiers de l'image, constructeur vérifié en conteneur — `price`, `side`,
+`leverage`, `stop_loss`, `take_profit`, `fees_paid`, `decision_price`,
+`slippage_bps`, `regime` tous renseignés, aucune colonne manquante. Sentinelle
+`data/.a2_deferred` supprimée : la détection complète est réactivée.
+
+**Restent ouverts** : A1 (RVOL 15 m présenté comme 5 m), A3 (ronde
+d'entraînement non interrompue sur `-1003`, échec en warning), K1 (API Quant
+sans crédit), K2 (AUC validation 0,5623).
 
 ---
 
