@@ -62,6 +62,7 @@ imputable à l'observation en cours.
 | 23:03 | 6 | 109 | −53,45 | 0 | RAS. |
 | 23:33 | 7 | 109 | −53,45 | **1** | **A2 découverte** — première ligne écrite, colonnes neuves vides. |
 | 00:03 | 6 | 109 | −53,45 | 1 | A2 persiste (correctif non déployé). Bot passé en gestion de position : analyse concentrée sur BTCUSDT seul, comportement normal. |
+| 00:33 | 7 | 109 | −53,45 | 1 | RAS. A2 basculé en dégradation connue le temps du report — sentinelle `data/.a2_deferred`, à supprimer après redéploiement. |
 
 ---
 

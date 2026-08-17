@@ -177,14 +177,27 @@ def main() -> int:
         fresh = raw.iloc[baseline:] if len(raw) > baseline else raw.iloc[0:0]
         print(f'nouvelles lignes: {len(fresh)} (depuis le début de l\'observation)')
 
+        # A2 : deux chemins d'écriture contournaient le schéma. Corrigé dans le
+        # dépôt (e74c074) mais volontairement non redéployé avant la fin de
+        # l'observation. Tant que le conteneur tourne l'ancienne image, le
+        # défaut est attendu — le signaler comme neuf à chaque tick masquerait
+        # une vraie régression.
+        schema_gap_expected = os.path.exists('data/.a2_deferred')
+
         if len(fresh):
+            gaps = []
             for col in ('side', 'stop_loss', 'fees_paid', 'regime'):
                 if col in fresh.columns and fresh[col].notna().sum() == 0:
-                    anomalies.append(f'colonne {col} non renseignée sur les nouvelles lignes')
+                    gaps.append(f'colonne {col} non renseignée sur les nouvelles lignes')
             if 'price' in fresh.columns:
                 zero_price = (pd.to_numeric(fresh['price'], errors='coerce').fillna(0) == 0).sum()
                 if zero_price == len(fresh):
-                    anomalies.append("prix d'entrée à 0 sur toutes les nouvelles lignes")
+                    gaps.append("prix d'entrée à 0 sur toutes les nouvelles lignes")
+
+            if gaps and schema_gap_expected:
+                print(f'  [connu] A2 — schéma incomplet, correctif non déployé ({len(gaps)} champs)')
+            else:
+                anomalies.extend(gaps)
     except Exception as e:
         anomalies.append(f'calcul KPI impossible : {e}')
 
