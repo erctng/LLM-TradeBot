@@ -19,6 +19,15 @@ import numpy as np
 import pandas as pd
 import time
 
+class RateLimitedError(RuntimeError):
+    """L'exchange a banni l'IP pour excès de requêtes (-1003).
+
+    Distincte d'un échec de récupération ordinaire : elle vaut pour tous les
+    symboles à la fois. Poursuivre la ronde ajoute des requêtes pendant un ban
+    actif, ce qui ne peut que le prolonger.
+    """
+
+
 if TYPE_CHECKING:
     # Import différé : src.agents.predict charge predict_agents_provider, qui
     # importe ProphetAutoTrainer depuis ce module. Importer PredictAgent à
@@ -492,8 +501,23 @@ class ProphetAutoTrainer:
                 for symbol in symbols:
                     if not self._running:
                         break
-                    if symbol in predict_agents:
+                    if symbol not in predict_agents:
+                        continue
+                    try:
                         self._do_train(predict_agents[symbol], symbol)
+                    except RateLimitedError as e:
+                        # Le bannissement vaut pour l'IP, donc pour tous les
+                        # symboles : enchaîner les suivants ajouterait des
+                        # requêtes pendant un ban actif et le prolongerait.
+                        # La ronde est abandonnée, la suivante réessaiera.
+                        log.error(
+                            f"🚫 Entraînement interrompu — API bannie ({e}). "
+                            f"Ronde abandonnée après {symbol}; les modèles "
+                            f"conservent leur version précédente et vieillissent "
+                            f"jusqu'à la prochaine ronde."
+                        )
+                        self.last_error = str(e)
+                        break
                 
                 self.train_count += 1
                 self.last_train_time = datetime.now()
@@ -613,9 +637,14 @@ class ProphetAutoTrainer:
             return df
             
         except Exception as e:
+            message = str(e)
+            if '-1003' in message or 'Way too many requests' in message:
+                # Remonté à l'appelant : c'est un état global, pas un défaut
+                # propre à ce symbole.
+                raise RateLimitedError(message) from e
             log.error(f"获取历史数据失败: {e}")
             return None
 
 
 # 导出
-__all__ = ['ProphetMLModel', 'LabelGenerator', 'ProphetAutoTrainer', 'HAS_LIGHTGBM']
+__all__ = ['ProphetMLModel', 'LabelGenerator', 'ProphetAutoTrainer', 'HAS_LIGHTGBM', 'RateLimitedError']
