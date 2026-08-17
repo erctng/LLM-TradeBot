@@ -65,6 +65,8 @@ imputable à l'observation en cours.
 | 00:33 | 7 | 109 | −53,45 | 1 | RAS. A2 basculé en dégradation connue le temps du report — sentinelle `data/.a2_deferred`, à supprimer après redéploiement. |
 | 01:03 | 7 | 109 | −53,45 | 1 | **A3 découverte** — réentraînement Prophet sauté sur les 3 symboles (rate limit). |
 | 01:33 | 6 | 109 | −53,45 | 1 | Pas de récidive d'A3 (0 sur 20 min). Relevé enrichi de l'horodatage des erreurs, la fenêtre de 35 min faisant réalerter un même incident au tick suivant. |
+| 02:03 | 7 | 109 | −53,45 | 1 | RAS. A3 sorti de la fenêtre, aucune récidive. |
+| 02:33 | 6 | **110** | **−54,76** | 1 | RAS. **Premier aller-retour complet** : clôture du SHORT BTCUSDT à −1,31. Premier PnL net calculé. Confirme A2 (voir ci-dessous). |
 
 ---
 
@@ -180,6 +182,28 @@ plus diverger en silence.
 **Leçon** : le premier trade réel a invalidé en une ligne ce que 13 h de relevés
 « RAS » n'avaient pas pu tester. Un chemin d'écriture ne se valide qu'en
 l'empruntant.
+
+### Confirmation par le premier aller-retour complet (02:33Z)
+
+Le SHORT BTCUSDT ouvert au cycle 130 s'est clôturé au cycle 165 à −1,31.
+La ligne finale sépare nettement les deux chemins :
+
+| Champ | Valeur | Chemin |
+|---|---|---|
+| `close_cycle`, `exit_price`, `pnl`, `status` | corrects | clôture ✅ |
+| `exit_reason` | `signal` | clôture ✅ |
+| `fees_paid`, `fees_estimated` | 0,10986 / 1 | clôture ✅ |
+| `price`, `side`, `leverage`, `stop_loss`, `decision_price`, `regime` | vides | ouverture ❌ |
+
+Le correctif de `update_trade_exit` est donc bien déployé et opérationnel ; seul
+le chemin d'ouverture reste à redéployer. Diagnostic A2 confirmé sans ambiguïté.
+
+**Conséquence chiffrée sur les coûts** : les frais enregistrés valent exactement
+`exit_price × quantité × 0,0004` = 0,10986. **Seule la jambe de sortie est
+comptée** — celle d'entrée n'a jamais été écrite, faute de prix d'entrée. Les
+frais sont donc sous-estimés d'environ 50 %, et le premier « PnL net » affiché
+(−54,87) est optimiste. Le R-multiple reste incalculable : ni prix d'entrée ni
+stop.
 
 **Déploiement** : décision prise de **ne pas redéployer avant la fin des 24 h**,
 pour ne pas casser la continuité de l'observation. Le conteneur continue donc
