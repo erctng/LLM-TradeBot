@@ -129,13 +129,8 @@ class DataSyncAgent:
             else:
                 # 仍需异步获取外部数据
                 q_data = await quant_client.fetch_coin_data(symbol)
-                # [DISABLE OI] Commented out due to API errors
-                # b_funding, b_oi = await asyncio.gather(
-                #     loop.run_in_executor(None, self.client.get_funding_rate_with_cache, symbol),
-                #     loop.run_in_executor(None, self.client.get_open_interest, symbol)
-                # )
-                b_funding = await self.client.get_funding_rate_with_cache(symbol) # Run non-concurrently or just wait
-                b_oi = {} # Mock empty OI
+                b_funding = await self.client.get_funding_rate_with_cache(symbol)
+                b_oi = await self._fetch_open_interest(symbol)
 
         if not ws_enabled or not self._initial_load_complete.get(symbol_key) or use_rest_fallback:
             # Get event loop for concurrent operations
@@ -153,7 +148,7 @@ class DataSyncAgent:
                 self.client.get_funding_rate_with_cache,
                 symbol
             )
-            b_oi = {}  # Mock empty OI
+            b_oi = await self._fetch_open_interest(symbol)
             
             log.info(f"[{symbol}] Data fetched: 5m={len(k5m)}, 15m={len(k15m)}, 1h={len(k1h)}")
             
@@ -215,6 +210,30 @@ class DataSyncAgent:
         
         return snapshot
     
+    async def _fetch_open_interest(self, symbol: str) -> dict:
+        """Open interest courant, via l'endpoint Binance /fapi/v1/openInterest.
+
+        Cette récupération avait été désactivée (« Commented out due to API
+        errors »), très probablement en réaction aux erreurs de l'API Quant
+        payante — mais elle a désactivé la source Binance, qui est gratuite,
+        de poids 1, et répond correctement sur testnet comme en production.
+
+        Le coût est négligeable : trois symboles toutes les cinq minutes font
+        36 unités de poids par heure sur un quota de 2400 par minute.
+
+        Un échec ne doit jamais interrompre le cycle : sans OI, le tracker
+        n'accumule pas, `has_coverage()` reste faux, et les consommateurs
+        retombent explicitement sur le proxy volume.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None, self.client.get_open_interest, symbol
+            ) or {}
+        except Exception as e:
+            log.warning(f"[{symbol}] Open interest indisponible: {e}")
+            return {}
+
     async def _fetch_with_cache(self, symbol: str, interval: str, limit: int) -> List[Dict]:
         """
         Fetch K-line data with incremental caching
