@@ -7,6 +7,10 @@ services:
       dockerfile: docker/Dockerfile
     container_name: llm-tradebot
     restart: unless-stopped
+    # --autostart : sans lui le conteneur démarre en "Stopped" et attend un clic
+    # sur Start dans le dashboard. Personne ne le clique sur un déploiement
+    # serveur, et le bot n'exécute alors jamais le moindre cycle.
+    command: ["python", "main.py", "--test", "--mode", "continuous", "--interval", "5", "--autostart"]
     ports:
       - "8000:8000"
     environment:

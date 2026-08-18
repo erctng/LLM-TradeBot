@@ -617,10 +617,159 @@ class DataSaver:
     save_step7_execution = save_execution
 
     # --- 交易历史记录扩展 ---
-    TRADE_COLUMNS = [
-        'record_time', 'open_cycle', 'close_cycle', 'action', 'symbol', 'price', 'quantity', 
+    #
+    # `all_trades.csv` est la SOURCE UNIQUE DE VÉRITÉ des trades. La table
+    # `trades` de trading.db n'est plus écrite (voir TradingLogger). Toute
+    # analyse de performance lit ce fichier via src.analytics.performance.
+    #
+    # Colonnes historiques (ordre figé, ne jamais réordonner).
+    _TRADE_COLUMNS_V1 = [
+        'record_time', 'open_cycle', 'close_cycle', 'action', 'symbol', 'price', 'quantity',
         'cost', 'exit_price', 'pnl', 'confidence', 'status'
     ]
+
+    # Colonnes ajoutées pour rendre les KPI calculables :
+    #   side / leverage      — décomposition par côté et rendement des fonds engagés
+    #   stop_loss/take_profit— risque initial engagé, sans quoi pas de R-multiple
+    #   exit_reason          — répond à « pourquoi je perds » (sl / tp / trailing / signal)
+    #   fees_paid/funding_paid — sans elles, les KPI live restent bruts et
+    #                          incomparables aux KPI nets du backtest
+    #   fees_estimated       — 1 si les frais sont déduits du taux configuré et
+    #                          non du retour d'exécution de l'exchange
+    #   decision_price/slippage_bps — écart entre décision et exécution
+    #   mae / mfe            — stops trop serrés ? sorties trop précoces ?
+    #   regime               — décomposition de l'edge par régime de marché
+    #   cycle_id             — rattachement à la décision qui a produit le trade
+    _TRADE_COLUMNS_V2 = [
+        'side', 'leverage', 'stop_loss', 'take_profit', 'exit_reason',
+        'fees_paid', 'funding_paid', 'fees_estimated',
+        'decision_price', 'slippage_bps', 'mae', 'mfe', 'regime', 'cycle_id',
+    ]
+
+    TRADE_COLUMNS = _TRADE_COLUMNS_V1 + _TRADE_COLUMNS_V2
+
+    # Colonnes numériques : complétées par 0.0 plutôt que 'N/A'.
+    _TRADE_NUMERIC = {
+        'cost', 'pnl', 'exit_price', 'price', 'quantity', 'leverage',
+        'stop_loss', 'take_profit', 'fees_paid', 'funding_paid',
+        'fees_estimated', 'decision_price', 'slippage_bps', 'mae', 'mfe',
+    }
+
+    # Taux taker Binance USDⓈ-M, utilisé pour estimer les frais quand le retour
+    # d'exécution ne les fournit pas.
+    TAKER_FEE_RATE = 0.0004
+
+    @classmethod
+    def build_trade_record(
+        cls,
+        *,
+        action: str,
+        symbol: str,
+        entry_price: float,
+        quantity: float,
+        status: str,
+        confidence=None,
+        open_cycle: int = 0,
+        close_cycle: int = 0,
+        cycle_id=None,
+        exit_price: float = 0.0,
+        pnl: float = 0.0,
+        leverage=1,
+        stop_loss=0.0,
+        take_profit=0.0,
+        exit_reason=None,
+        regime=None,
+        decision_price=None,
+        timestamp=None,
+    ) -> Dict:
+        """Construit un enregistrement de trade complet.
+
+        Point d'entrée unique : trois sites d'écriture construisaient chacun leur
+        dictionnaire à la main, avec des clés divergentes. Deux d'entre eux
+        posaient `entry_price`, qui n'est pas une colonne — `save_trade`
+        complétait alors `price` par 0.0 et le prix d'entrée était perdu, rendant
+        R-multiple et slippage incalculables. Aucun ne renseignait side, levier,
+        stop, frais ni régime.
+        """
+        normalized = (action or '').upper()
+        side = 'SHORT' if 'SHORT' in normalized else ('LONG' if 'LONG' in normalized else 'N/A')
+
+        reference = decision_price if decision_price else entry_price
+        slippage_bps = 0.0
+        if reference and entry_price:
+            slippage_bps = (float(entry_price) - float(reference)) / float(reference) * 10_000
+
+        try:
+            fees = abs(float(entry_price) * float(quantity)) * cls.TAKER_FEE_RATE
+        except (TypeError, ValueError):
+            fees = 0.0
+
+        record = {
+            'open_cycle': open_cycle,
+            'close_cycle': close_cycle,
+            'action': normalized,
+            'symbol': symbol,
+            'price': entry_price,
+            'quantity': quantity,
+            'cost': (entry_price or 0) * (quantity or 0),
+            'exit_price': exit_price,
+            'pnl': pnl,
+            'confidence': confidence,
+            'status': status,
+            'cycle': cycle_id,
+            'cycle_id': cycle_id,
+            'side': side,
+            'leverage': leverage,
+            'stop_loss': stop_loss or 0.0,
+            'take_profit': take_profit or 0.0,
+            'exit_reason': exit_reason or 'N/A',
+            'fees_paid': fees,
+            'fees_estimated': 1,
+            'decision_price': reference or 0.0,
+            'slippage_bps': round(slippage_bps, 4),
+            'regime': regime or 'N/A',
+        }
+        if timestamp:
+            record['timestamp'] = timestamp
+        return record
+
+    def _migrate_trades_schema(self, file_path: str) -> None:
+        """Aligne un CSV d'ancien schéma sur `TRADE_COLUMNS`.
+
+        `save_trade` ajoute les lignes en mode append sans en-tête : écrire une
+        ligne élargie dans un fichier resté en 12 colonnes décalerait toutes les
+        valeurs et corromprait l'historique. La migration est donc obligatoire
+        avant le premier append, et idempotente.
+
+        L'historique est préservé : les colonnes nouvelles sont laissées vides,
+        ce qui est distinct d'un zéro. Une sauvegarde est écrite à côté.
+        """
+        if not os.path.exists(file_path):
+            return
+
+        try:
+            existing = pd.read_csv(file_path)
+        except Exception as e:
+            log.error(f"Lecture impossible pour migration du schéma trades: {e}")
+            return
+
+        missing = [c for c in self.TRADE_COLUMNS if c not in existing.columns]
+        if not missing:
+            return
+
+        backup = f"{file_path}.v1.bak"
+        if not os.path.exists(backup):
+            existing.to_csv(backup, index=False)
+
+        for col in missing:
+            existing[col] = pd.NA
+
+        extra = [c for c in existing.columns if c not in self.TRADE_COLUMNS]
+        existing[self.TRADE_COLUMNS + extra].to_csv(file_path, index=False)
+        log.info(
+            f"Schéma trades migré (+{len(missing)} colonnes, {len(existing)} lignes "
+            f"conservées). Sauvegarde: {backup}"
+        )
 
     def save_trade(self, trade_data: Dict):
         """保存交易记录（持久化追加至单一CSV，标准化 Schema）"""
@@ -629,28 +778,31 @@ class DataSaver:
             base_path = self.dirs.get(category)
             if not os.path.exists(base_path):
                 os.makedirs(base_path, exist_ok=True)
-            
+
             file_path = os.path.join(base_path, 'all_trades.csv')
-            
+
+            # 0. Aligner un fichier d'ancien schéma avant tout append.
+            self._migrate_trades_schema(file_path)
+
             # 1. 完善基础字段
             trade_data['record_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             if 'cycle_id' not in trade_data and 'cycle' in trade_data:
                 trade_data['cycle_id'] = trade_data['cycle']
-            
+
             # 2. 补全缺失字段 (Schema 稳定性)
             for col in self.TRADE_COLUMNS:
-                if col not in trade_data:
-                    trade_data[col] = 0.0 if col in ['cost', 'pnl', 'exit_price', 'price', 'quantity'] else 'N/A'
-            
+                if col not in trade_data or trade_data[col] is None:
+                    trade_data[col] = 0.0 if col in self._TRADE_NUMERIC else 'N/A'
+
             # 3. 按标准顺序转换为 DataFrame
             df = pd.DataFrame([{col: trade_data[col] for col in self.TRADE_COLUMNS}])
-            
+
             # 4. 保存
             if os.path.exists(file_path):
                 df.to_csv(file_path, mode='a', header=False, index=False)
             else:
                 df.to_csv(file_path, mode='w', header=True, index=False)
-            
+
             log.debug(f"交易记录已保存 (标准化): {file_path}")
         except Exception as e:
             log.error(f"保存标准化交易记录失败: {e}")
@@ -693,24 +845,38 @@ class DataSaver:
         exit_price: float,
         pnl: float,
         exit_time: str,
-        close_cycle: int = 0
+        close_cycle: int = 0,
+        exit_reason: Optional[str] = None,
+        fees_paid: Optional[float] = None,
+        funding_paid: Optional[float] = None,
+        fees_estimated: Optional[bool] = None,
+        mae: Optional[float] = None,
+        mfe: Optional[float] = None,
+        slippage_bps: Optional[float] = None,
     ) -> bool:
         """
         更新交易记录的平仓信息 (原地更新)
-        
+
         查找该 symbol 最近一条非 CLOSED 状态的记录，更新其 Exit Price 和 PnL。
         这样可以保持 Trade History 表格的一致性（Round-Trip View）。
+
+        Les champs de coût sont optionnels : ils ne sont écrits que s'ils sont
+        fournis, pour ne pas écraser par des zéros une information réelle
+        renseignée à l'ouverture. Les frais cumulés (ouverture + fermeture)
+        s'additionnent à ce qui a déjà été enregistré.
         """
         try:
             file_path = os.path.join(self.dirs.get('trades'), 'all_trades.csv')
             if not os.path.exists(file_path):
                 log.warning("交易记录文件不存在，无法更新平仓信息")
                 return False
-            
+
+            self._migrate_trades_schema(file_path)
+
             df = pd.read_csv(file_path)
             if df.empty:
                 return False
-            
+
             # 反向查找该 symbol 的 Open 记录
             # 假设 Open 记录的 status 通常为 SENT, EXECUTED, SIMULATED 等，且 exit_price 为 0 或 NaN
             # 我们查找 exit_price <= 0 或 NaN 的行
@@ -733,18 +899,40 @@ class DataSaver:
             df.at[target_idx, 'pnl'] = pnl
             df.at[target_idx, 'close_cycle'] = close_cycle
             df.at[target_idx, 'status'] = 'CLOSED'
-            
+
+            if exit_reason is not None:
+                # Une colonne entièrement vide est inférée en float64 par pandas :
+                # y écrire une chaîne lève. On l'élargit en object au besoin.
+                if df['exit_reason'].dtype != object:
+                    df['exit_reason'] = df['exit_reason'].astype(object)
+                df.at[target_idx, 'exit_reason'] = exit_reason
+            if fees_estimated is not None:
+                df.at[target_idx, 'fees_estimated'] = int(bool(fees_estimated))
+            for column, value in (
+                ('fees_paid', fees_paid),
+                ('funding_paid', funding_paid),
+            ):
+                if value is None:
+                    continue
+                # Frais d'ouverture déjà enregistrés + frais de fermeture.
+                previous = pd.to_numeric(df.at[target_idx, column], errors='coerce')
+                df.at[target_idx, column] = float(value) + (
+                    0.0 if pd.isna(previous) else float(previous)
+                )
+            for column, value in (
+                ('mae', mae), ('mfe', mfe), ('slippage_bps', slippage_bps),
+            ):
+                if value is not None:
+                    df.at[target_idx, column] = float(value)
+
             # Save back
             df.to_csv(file_path, index=False)
             log.info(f"✅ 已更新交易记录: {symbol} Closed @ ${exit_price:.2f}, PnL: ${pnl:.2f}, Cycle: {close_cycle}")
             return True
-            
+
         except Exception as e:
             log.error(f"更新交易记录失败: {e}")
             return False
-            
-        except Exception as e:
-            log.error(f"更新交易记录失败: {e}")
             return False
     def save_virtual_account(self, balance: float, positions: Dict):
         """持久化模拟账户状态"""

@@ -26,6 +26,39 @@ class SemanticAnalysisRunner:
         self.agent_config = agent_config
         self.agent_provider = agent_provider
       
+    @staticmethod
+    def _trigger_rvol(context) -> float:
+        """Volume relatif 5 m réellement évalué par la couche L4.
+
+        Cette valeur alimentait auparavant l'agent depuis
+        `processed_dfs['15m']['volume_ratio']` — mauvais timeframe et mauvaise
+        grandeur. `volume_ratio` compare le volume à sa moyenne sur 20 barres de
+        15 minutes ; la couche L4 gate sur `calculate_rvol()`, soit 8 barres de
+        5 minutes. Mesuré sur un même cycle, l'agent lisait 0,44 à 0,84 quand L4
+        évaluait 2,07 : il concluait « volume insuffisant » alors que le volume
+        valait deux fois sa moyenne.
+
+        On lit donc `trigger_rvol`, la valeur que L4 a effectivement utilisée.
+        Elle vaut None quand le détecteur est désactivé ; on recalcule alors sur
+        le 5 m plutôt que de retomber sur une grandeur d'un autre timeframe.
+        """
+        rvol = context.four_layer_result.get('trigger_rvol')
+        if rvol is not None:
+            try:
+                return float(rvol)
+            except (TypeError, ValueError):
+                pass
+
+        df_5m = (context.processed_dfs or {}).get('5m')
+        if df_5m is not None and 'volume' in df_5m.columns and len(df_5m) >= 9:
+            volumes = df_5m['volume']
+            average = float(volumes.iloc[-9:-1].mean())
+            if average > 0:
+                return float(volumes.iloc[-1]) / average
+
+        # Neutre : ni signal de rupture, ni signal d'assèchement.
+        return 1.0
+
     @log_run
     async def run(
         self,
@@ -74,6 +107,7 @@ class SemanticAnalysisRunner:
                 'ema20_1h': context.four_layer_result.get('ema20_1h', context.current_price),
                 'ema60_1h': context.four_layer_result.get('ema60_1h', context.current_price),
                 'oi_change': context.four_layer_result.get('oi_change', 0),
+                'oi_source': context.four_layer_result.get('oi_source', 'open_interest'),
                 'adx': context.four_layer_result.get('adx', 20),
                 'regime': context.four_layer_result.get('regime', 'unknown')
             }
@@ -93,7 +127,7 @@ class SemanticAnalysisRunner:
             trigger_data = {
                 'symbol': context.symbol,
                 'pattern': context.four_layer_result.get('trigger_pattern'),
-                'rvol': context.processed_dfs['15m']['volume_ratio'].iloc[-1] if 'volume_ratio' in context.processed_dfs['15m'].columns else 1.0,
+                'rvol': self._trigger_rvol(context),
                 'trend_direction': context.four_layer_result.get('final_action', 'neutral')
             }
 

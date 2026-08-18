@@ -91,8 +91,7 @@ class TrendAgentLLM(TrendAgent):
                 'metadata': {
                     'strength': signals['strength'],
                     'adx': round(signals['adx'], 1),
-                    'oi_fuel': signals['fuel'],
-                    'oi_change': round(signals['oi_change'], 1)
+                    **self._fuel_metadata(data, signals),
                 }
             }
             
@@ -184,9 +183,7 @@ Price & EMA:
 - 1h EMA60: ${ema60:,.2f}
 - EMA Status: {ema_status}
 
-Open Interest:
-- OI Change (24h): {oi_change:+.1f}%
-- Fuel Status: {fuel_status}
+{self._fuel_section(data, oi_change, fuel_status)}
 
 Trend Strength:
 - ADX: {adx:.0f}
@@ -195,6 +192,69 @@ Trend Strength:
 Market Regime: {regime.upper()}
 
 Provide a 2-3 sentence semantic analysis of the trend situation."""
+
+    @staticmethod
+    def _fuel_metadata(data: Dict, signals: Dict) -> Dict:
+        """Nomme la métadonnée d'après la mesure réellement effectuée.
+
+        Cette métadonnée est réinjectée telle quelle dans le contexte lu par
+        les agents Bull/Bear et par le moteur de décision. Une clé `oi_change`
+        portant un ratio de volume suffisait à leur faire écrire « Open
+        Interest surged +200% » : le nom du champ est le seul indice dont ils
+        disposent sur la nature de la donnée.
+        """
+        source = data.get('oi_source', 'open_interest')
+        value = round(signals['oi_change'], 1)
+
+        if source == 'volume_proxy':
+            return {
+                'volume_vs_avg_pct': value,
+                'volume_activity': signals['fuel'],
+                'oi_available': False,
+            }
+        if source == 'unavailable':
+            return {'oi_available': False}
+
+        return {
+            'oi_fuel': signals['fuel'],
+            'oi_change': value,
+            'oi_available': True,
+        }
+
+    @staticmethod
+    def _fuel_section(data: Dict, oi_change: float, fuel_status: str) -> str:
+        """Décrit la mesure de « carburant » sous son vrai nom.
+
+        `oi_change` n'est de l'open interest que si l'historique OI couvrait la
+        fenêtre. Sinon c'est un ratio de volume écrêté à ±200 %. Annoncer un
+        volume comme de l'open interest amenait le modèle à conclure sur du
+        positionnement net alors qu'il ne voyait que de la rotation — et une
+        valeur saturée à 200 était lue comme une mesure réelle.
+        """
+        source = data.get('oi_source', 'open_interest')
+
+        if source == 'volume_proxy':
+            saturated = " (valeur écrêtée, à ne pas lire comme une mesure)" if abs(oi_change) >= 200 else ""
+            return (
+                "Volume Activity (PROXY — open interest unavailable):\n"
+                f"- 1h Volume vs 24h average: {oi_change:+.1f}%{saturated}\n"
+                f"- Activity Status: {fuel_status}\n"
+                "- NOTE: this is turnover, NOT open interest. Do not infer net "
+                "positioning or new conviction from it."
+            )
+
+        if source == 'unavailable':
+            return (
+                "Open Interest:\n"
+                "- Unavailable for this cycle. Do not reference open interest "
+                "or fuel in the analysis."
+            )
+
+        return (
+            "Open Interest:\n"
+            f"- OI Change (24h): {oi_change:+.1f}%\n"
+            f"- Fuel Status: {fuel_status}"
+        )
 
     def _get_fallback_analysis(self, data: Dict) -> str:
         """Fallback analysis when LLM fails"""

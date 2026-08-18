@@ -89,6 +89,9 @@ class FourLayerFilterStageRunner:
         if oi_change is None:
             oi_change = 0
         four_layer_result['oi_change'] = oi_change
+        # Provenance de la mesure : open interest réel ou proxy volume. Sans
+        # elle, l'agent trend présente un volume comme de l'open interest.
+        four_layer_result['oi_source'] = oi_fuel.get('oi_source', 'open_interest')
 
         data_anomalies = []
         if abs(oi_change) > 200:
@@ -153,6 +156,22 @@ class FourLayerFilterStageRunner:
             oi_divergence_warn = 25.0
             oi_divergence_block = 100.0
             four_layer_result['trend_continuation_mode'] = True
+
+        # La divergence prix/OI n'a de sens que sur du véritable open interest.
+        # Sans couverture, `oi_change` porte un ratio de volume écrêté à ±200 :
+        # une chute de volume à 0,3 % de sa moyenne devenait « OI -99,7 % » et
+        # bloquait la couche. Observé : 26 échecs de L1 sur 26 imputables à
+        # cette règle, sur une grandeur qui n'était pas de l'open interest.
+        #
+        # L'OI mesure le positionnement net, le volume la rotation : conclure à
+        # une divergence de positionnement depuis un volume est une erreur de
+        # catégorie, pas un réglage de seuil. La règle est donc neutralisée
+        # tant que la donnée n'est pas la bonne, plutôt qu'assouplie.
+        oi_is_real = four_layer_result.get('oi_source') == 'open_interest'
+        if not oi_is_real:
+            oi_divergence_warn = float('inf')
+            oi_divergence_block = float('inf')
+            four_layer_result['oi_divergence_skipped'] = True
 
         if trend_1h == 'neutral':
             four_layer_result['blocking_reason'] = 'No clear 1h trend (EMA 20/60)'

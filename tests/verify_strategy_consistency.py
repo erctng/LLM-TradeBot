@@ -8,7 +8,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.backtest.agent_wrapper import BacktestAgentRunner
-from src.agents.data_sync_agent import MarketSnapshot
+from src.agents.data_sync import MarketSnapshot
 
 def create_mock_df(periods=100, start_price=100.0):
     """Create a mock DataFrame with enough data for analysis"""

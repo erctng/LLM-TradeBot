@@ -88,18 +88,55 @@ def start_server():
 # ============================================
 # 主入口
 # ============================================
+_INSTANCE_LOCK = None
+
+
+def acquire_instance_lock(path: str = 'data/.bot.lock'):
+    """Verrou exclusif inter-instances.
+
+    `data/` est monté dans le conteneur Docker : l'hôte et le conteneur voient
+    donc le même `all_trades.csv`, et `update_trade_exit` réécrit le fichier
+    entier. Deux bots simultanés se perdent mutuellement des écritures et
+    réentraînent les mêmes modèles en concurrence.
+
+    `flock` porte sur l'inode, il traverse donc le bind mount et fonctionne
+    entre l'hôte et le conteneur, là où une comparaison de PID échouerait
+    (espaces de noms distincts).
+
+    Renvoie le descripteur à conserver ouvert, ou None si un autre bot tourne.
+    """
+    import fcntl
+
+    try:
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        handle = open(path, 'w')
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        handle.write(f"{os.getpid()}\n")
+        handle.flush()
+        return handle
+    except BlockingIOError:
+        return None
+    except OSError as e:
+        # Système de fichiers sans verrouillage : ne pas bloquer le démarrage.
+        log.warning(f"⚠️ Instance lock unavailable ({e}); concurrent-run guard disabled")
+        return False
+
+
 def main():
     """主函数"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='多Agent交易机器人')
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument('--test', action='store_true', help='测试模式')
     mode_group.add_argument('--live', action='store_true', help='实盘模式')
-    parser.add_argument('--max-position', type=float, default=100.0, help='最大单笔金额')
-    parser.add_argument('--leverage', type=int, default=1, help='杠杆倍数')
-    parser.add_argument('--stop-loss', type=float, default=1.0, help='止损百分比')
-    parser.add_argument('--take-profit', type=float, default=2.0, help='止盈百分比')
+    # Défaut None : config.yaml est la source de vérité, la CLI est un override
+    # explicite. Avec des défauts en dur, le conteneur tournait à leverage=1
+    # alors que config.yaml déclarait 5 — sans que rien ne le signale.
+    parser.add_argument('--max-position', type=float, default=None, help='最大单笔金额 (默认取 config.yaml)')
+    parser.add_argument('--leverage', type=int, default=None, help='杠杆倍数 (默认取 config.yaml trading.leverage)')
+    parser.add_argument('--stop-loss', type=float, default=None, help='止损百分比 (默认取 config.yaml)')
+    parser.add_argument('--take-profit', type=float, default=None, help='止盈百分比 (默认取 config.yaml)')
     parser.add_argument('--kline-limit', type=int, default=300, help='K线拉取数量 (用于 warmup 测试)')
     parser.add_argument('--symbols', type=str, default='', help='覆盖交易对 (CSV, 例如: BTCUSDT,ETHUSDT)')
     parser.add_argument('--skip-auto3', action='store_true', help='在 once 模式跳过 AUTO3 解析')
@@ -107,8 +144,24 @@ def main():
     parser.add_argument('--interval', type=float, default=3.0, help='持续运行间隔（分钟）')
     # CLI Headless Mode
     parser.add_argument('--headless', action='store_true', help='无头模式：不启动 Web Dashboard，在终端显示实时数据')
+    parser.add_argument('--autostart', action='store_true',
+                        help='连续模式下立即开始交易，无需点击 Start（headless 部署必需）')
+    parser.add_argument('--allow-concurrent', action='store_true',
+                        help='跳过单实例锁（仅用于调试，可能损坏共享的 trades 数据）')
     
     args = parser.parse_args()
+
+    global _INSTANCE_LOCK
+    if not args.allow_concurrent:
+        _INSTANCE_LOCK = acquire_instance_lock()
+        if _INSTANCE_LOCK is None:
+            log.error(
+                "❌ Un autre bot tourne déjà sur ce répertoire de données "
+                "(conteneur Docker ou processus hôte). Deux instances écrivent "
+                "le même all_trades.csv et se perdent des trades. "
+                "Arrêtez l'autre instance, ou passez --allow-concurrent."
+            )
+            sys.exit(1)
     
     # [NEW] Check RUN_MODE from .env (Config Manager integration)
     import os
@@ -159,11 +212,31 @@ def main():
     # 交易参数
     used_kline_limit = int(args.kline_limit) if args.kline_limit and args.kline_limit > 0 else 300
 
+    # config.yaml est la référence ; un flag CLI ne s'applique que s'il est fourni.
+    # Le levier est en plus borné par risk.max_leverage : la config de risque ne
+    # peut pas être contournée depuis la ligne de commande.
+    from src.config import config as _cfg
+
+    resolved_leverage = args.leverage if args.leverage is not None else int(_cfg.get('trading.leverage', 1))
+    max_allowed_leverage = int(_cfg.get('risk.max_leverage', 5))
+    if resolved_leverage > max_allowed_leverage:
+        print(f"⚠️ leverage {resolved_leverage} > risk.max_leverage {max_allowed_leverage}, clamped")
+        resolved_leverage = max_allowed_leverage
+
+    resolved_max_position = args.max_position if args.max_position is not None else float(_cfg.get('trading.max_position_size', 100.0))
+    resolved_stop_loss = args.stop_loss if args.stop_loss is not None else float(_cfg.get('trading.stop_loss_pct', 1.0))
+    resolved_take_profit = args.take_profit if args.take_profit is not None else float(_cfg.get('trading.take_profit_pct', 2.0))
+
+    print(
+        f"⚙️ Params: leverage={resolved_leverage}x (max {max_allowed_leverage}x) | "
+        f"SL={resolved_stop_loss}% | TP={resolved_take_profit}% | max_position={resolved_max_position}"
+    )
+
     trading_parameters = TradingParameters(
-        max_position_size=args.max_position,
-        leverage=args.leverage,
-        stop_loss_pct=args.stop_loss,
-        take_profit_pct=args.take_profit,
+        max_position_size=resolved_max_position,
+        leverage=resolved_leverage,
+        stop_loss_pct=resolved_stop_loss,
+        take_profit_pct=resolved_take_profit,
         kline_limit=used_kline_limit,
         test_mode=args.test
     )
@@ -234,9 +307,23 @@ def main():
         # or exit immediately. Usually 'once' implies run and exit.
         
     else:
-        # Default to Stopped - Wait for user to click Start button
-        if global_state.execution_mode != "Running":
+        # `--autostart` (ou AUTOSTART=1) démarre le trading sans interaction.
+        # Sans lui, `--headless --mode continuous` est une impasse : le mode
+        # par défaut est "Stopped" et il n'existe aucun dashboard sur lequel
+        # cliquer Start, donc le bot ne trade jamais — il tourne indéfiniment
+        # en attente d'une action impossible.
+        autostart = args.autostart or os.getenv('AUTOSTART', '').lower() in ('1', 'true', 'yes', 'on')
+
+        if autostart:
+            global_state.execution_mode = "Running"
+            log.info("🚀 Autostart enabled — trading starts immediately.")
+        elif global_state.execution_mode != "Running":
             global_state.execution_mode = "Stopped"
+            if args.headless:
+                log.warning(
+                    "⚠️ Headless + continuous without --autostart: no dashboard "
+                    "exists to press Start, so no cycle will ever run."
+                )
             log.info("🚀 System ready (Stopped). Waiting for user to click Start button...")
         
         global_state.is_running = True  # Keep event loop running

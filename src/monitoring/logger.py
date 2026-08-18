@@ -215,7 +215,19 @@ class TradingLogger:
         log.info(f"Execution recorded: {execution_result.get('action')}")
     
     def open_trade(self, trade_info: Dict):
-        """开启新交易"""
+        """开启新交易
+
+        ⚠️ N'EST PAS LA SOURCE DE VÉRITÉ DES TRADES.
+
+        La source unique est `data/live/execution/trades/all_trades.csv`, écrit
+        par `DataSaver.save_trade` et lu par `src.analytics.performance`. Cette
+        table SQL n'est alimentée par aucun appelant en production ; elle est
+        conservée pour le déploiement PostgreSQL et pour les tests.
+
+        Ne jamais calculer de KPI depuis la table `trades` : elle est vide, et
+        une télémétrie branchée dessus ne renverrait que des zéros — c'est
+        précisément le défaut qui a été corrigé.
+        """
         sql = text('''
             INSERT INTO trades (
                 open_time, symbol, side, entry_price, quantity, leverage, status
@@ -238,15 +250,22 @@ class TradingLogger:
         with self.engine.begin() as conn:
             # 1. 查找最近的未关闭交易
             select_sql = text('''
-                SELECT id, entry_price FROM trades
+                SELECT id, entry_price, side, leverage FROM trades
                 WHERE symbol = :symbol AND status = 'OPEN'
                 ORDER BY id DESC LIMIT 1
             ''')
             result = conn.execute(select_sql, {'symbol': symbol}).fetchone()
-            
+
             if result:
-                trade_id, entry_price = result
-                pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+                trade_id, entry_price, side, leverage = result
+                # Direction matters: a profitable SHORT has exit < entry. Without
+                # this sign, every short trade is reported with an inverted return.
+                direction = -1.0 if str(side).upper() in ('SHORT', 'SELL') else 1.0
+                lev = float(leverage or 1) or 1.0
+                if entry_price:
+                    pnl_pct = direction * ((exit_price - entry_price) / entry_price) * 100 * lev
+                else:
+                    pnl_pct = 0.0
                 
                 # 2. 更新交易状态
                 update_sql = text('''

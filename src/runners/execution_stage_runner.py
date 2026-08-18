@@ -60,6 +60,21 @@ class ExecutionStageRunner:
                 'details': {'reason': veto_reason, 'stage': 'execution_gate'},
                 'current_price': context.current_price
             }
+
+        # 🛡️ Circuit breakers: block NEW positions only. Closing must always be
+        # allowed — a breaker that blocks exits would trap capital in the market.
+        gate_action = context.order_params.get('action', context.vote_result.action)
+        if is_open_action(gate_action):
+            allowed, breaker_reason = global_state.check_risk_gate()
+            if not allowed:
+                global_state.add_log(f"[🛡️ CIRCUIT_BREAKER] {breaker_reason}")
+                log.warning(f"Open blocked by circuit breaker: {breaker_reason}")
+                return {
+                    'status': 'blocked',
+                    'action': gate_action,
+                    'details': {'reason': breaker_reason, 'stage': 'circuit_breaker'},
+                    'current_price': context.current_price
+                }
         
         emit_global_runtime_event(
             context,
@@ -147,8 +162,13 @@ class ExecutionStageRunner:
             pnl=realized_pnl,
             is_close_trade_action=is_close_trade_action,
             open_status='SIMULATED',
-            entry_field='entry_price',
-            include_timestamp=True
+            # 'price' est le nom réel de la colonne CSV. Écrire 'entry_price'
+            # laissait le champ hors schéma : save_trade le complétait par 0.0
+            # et tous les trades simulés étaient enregistrés à prix d'entrée nul.
+            entry_field='price',
+            include_timestamp=True,
+            regime=self._regime_label(context),
+            decision_price=context.current_price,
         )
 
         if is_open_action(context.vote_result.action):
@@ -246,7 +266,9 @@ class ExecutionStageRunner:
                 is_close_trade_action=is_close_trade_action,
                 open_status='EXECUTED',
                 entry_field='price',
-                include_timestamp=False
+                include_timestamp=False,
+                regime=self._regime_label(context),
+                decision_price=context.current_price,
             )
 
             emit_global_runtime_event(
@@ -279,6 +301,37 @@ class ExecutionStageRunner:
             'current_price': context.current_price
         }
     
+    # Taux taker Binance USDⓈ-M par défaut. Les frais réels ne remontent pas du
+    # client (le retour d'ordre ne porte pas `commission`), donc ils sont estimés
+    # depuis ce taux et marqués `fees_estimated=1`. Une estimation cohérente vaut
+    # mieux qu'une colonne vide : sans elle, les KPI live restent bruts et ne sont
+    # pas comparables aux KPI nets du backtest.
+    TAKER_FEE_RATE = 0.0004
+
+    def _estimated_fee(self, price: float, quantity: float) -> float:
+        """Frais taker estimés sur une jambe (ouverture ou fermeture)."""
+        try:
+            return abs(float(price) * float(quantity)) * self.TAKER_FEE_RATE
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _infer_side(action: Optional[str]) -> str:
+        normalized = (action or '').upper()
+        if 'SHORT' in normalized:
+            return 'SHORT'
+        if 'LONG' in normalized:
+            return 'LONG'
+        return 'N/A'
+
+    @staticmethod
+    def _regime_label(context) -> str:
+        """Régime de marché au moment de la décision, pour décomposer l'edge."""
+        regime = getattr(getattr(context, 'vote_result', None), 'regime', None)
+        if isinstance(regime, dict):
+            return str(regime.get('type') or regime.get('regime') or 'N/A')
+        return str(regime) if regime else 'N/A'
+
     def _persist_trade_history(
         self,
         *,
@@ -291,9 +344,13 @@ class ExecutionStageRunner:
         is_close_trade_action: bool,
         open_status: str,
         entry_field: str,
-        include_timestamp: bool
+        include_timestamp: bool,
+        exit_reason: Optional[str] = None,
+        regime: Optional[str] = None,
+        decision_price: Optional[float] = None,
     ) -> bool:
         """Persist/merge trade record to storage + in-memory history."""
+        quantity = order_params.get('quantity', 0)
         update_success = False
         if is_close_trade_action:
             update_success = self.saver.update_trade_exit(
@@ -301,7 +358,10 @@ class ExecutionStageRunner:
                 exit_price=exit_price,
                 pnl=pnl,
                 exit_time=datetime.now().strftime("%H:%M:%S"),
-                close_cycle=global_state.cycle_counter
+                close_cycle=global_state.cycle_counter,
+                exit_reason=exit_reason or 'signal',
+                fees_paid=self._estimated_fee(exit_price, quantity),
+                fees_estimated=True,
             )
             if update_success:
                 for trade in global_state.trade_history:
@@ -324,24 +384,27 @@ class ExecutionStageRunner:
                         original_open_cycle = trade.get('open_cycle', 0)
                         break
 
-            trade_record = {
-                'open_cycle': global_state.cycle_counter if is_open_trade_action else original_open_cycle,
-                'close_cycle': 0 if is_open_trade_action else global_state.cycle_counter,
-                'action': order_params['action'].upper(),
-                'symbol': symbol,
-                entry_field: entry_price,
-                'quantity': order_params['quantity'],
-                'cost': entry_price * order_params['quantity'],
-                'exit_price': exit_price,
-                'pnl': pnl,
-                'confidence': order_params['confidence'],
-                'status': open_status,
-                'cycle': cycle_id
-            }
+            trade_record = DataSaver.build_trade_record(
+                action=order_params['action'],
+                symbol=symbol,
+                entry_price=entry_price,
+                quantity=quantity,
+                status='CLOSED (Fallback)' if is_close_trade_action else open_status,
+                confidence=order_params.get('confidence'),
+                open_cycle=global_state.cycle_counter if is_open_trade_action else original_open_cycle,
+                close_cycle=0 if is_open_trade_action else global_state.cycle_counter,
+                cycle_id=cycle_id,
+                exit_price=exit_price,
+                pnl=pnl,
+                leverage=order_params.get('leverage', 1),
+                stop_loss=order_params.get('stop_loss') or order_params.get('stop_loss_price'),
+                take_profit=order_params.get('take_profit') or order_params.get('take_profit_price'),
+                exit_reason=exit_reason or ('signal' if is_close_trade_action else None),
+                regime=regime,
+                decision_price=decision_price,
+            )
             if include_timestamp:
                 trade_record['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if is_close_trade_action:
-                trade_record['status'] = 'CLOSED (Fallback)'
 
             self.saver.save_trade(trade_record)
             global_state.trade_history.insert(0, trade_record)

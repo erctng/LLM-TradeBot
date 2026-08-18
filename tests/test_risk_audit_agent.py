@@ -47,10 +47,16 @@ def _audit(decision: dict):
 
 
 def test_blocks_open_long_when_position_1h_disallows_long():
+    """1h filter blocks the long when no breakout override applies.
+
+    The override needs confidence >= 80 AND a strong 1h trend; weakening the
+    trend here isolates the plain veto path.
+    """
     decision = _base_decision("open_long")
     decision["position_1h"]["allow_long"] = False
     decision["position_1h"]["location"] = "upper"
     decision["position_1h"]["position_pct"] = 78.0
+    decision["trend_scores"]["trend_1h_score"] = 10.0  # below the 40 override floor
 
     result = _audit(decision)
 
@@ -58,11 +64,46 @@ def test_blocks_open_long_when_position_1h_disallows_long():
     assert "allow_long=False" in (result.blocked_reason or "")
 
 
+def test_breakout_override_lets_strong_long_through():
+    """A confirmed breakout is allowed past the 1h range filter.
+
+    In a strong uptrend, sitting high in the 1h range is expected rather than a
+    reason to refuse — provided confidence and multi-timeframe alignment hold.
+    """
+    decision = _base_decision("open_long")
+    decision["position_1h"]["allow_long"] = False
+    decision["position_1h"]["location"] = "upper"
+    decision["position_1h"]["position_pct"] = 78.0
+    decision["confidence"] = 85.0
+    decision["trend_scores"]["trend_1h_score"] = 45.0
+    decision["trend_scores"]["trend_15m_score"] = 20.0
+
+    result = _audit(decision)
+
+    assert result.passed is True
+    assert any("breakout override" in w for w in (result.warnings or []))
+
+
+def test_breakout_override_requires_sufficient_confidence():
+    """Below 80 confidence the override must not fire, even on a strong trend."""
+    decision = _base_decision("open_long")
+    decision["position_1h"]["allow_long"] = False
+    decision["position_1h"]["location"] = "upper"
+    decision["position_1h"]["position_pct"] = 78.0
+    decision["confidence"] = 79.0
+    decision["trend_scores"]["trend_1h_score"] = 45.0
+
+    result = _audit(decision)
+
+    assert result.passed is False
+
+
 def test_blocks_open_short_when_position_1h_disallows_short():
     decision = _base_decision("open_short")
     decision["position_1h"]["allow_short"] = False
     decision["position_1h"]["location"] = "lower"
     decision["position_1h"]["position_pct"] = 22.0
+    decision["trend_scores"]["trend_1h_score"] = -10.0  # above the -40 override floor
 
     result = _audit(decision)
 

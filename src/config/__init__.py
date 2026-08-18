@@ -96,8 +96,17 @@ class Config:
             self._config['llm']['model'] = llm_model
         
         # Custom base URL (for proxies)
-        # 支持 ANTHROPIC_BASE_URL 作为 LLM_BASE_URL 的别名（优先级更高）
-        base_url = os.getenv('ANTHROPIC_BASE_URL') or os.getenv('LLM_BASE_URL')
+        #
+        # ANTHROPIC_BASE_URL n'est un alias valide que si le provider EST
+        # Anthropic. Cette variable est exportée par les outils Anthropic
+        # installés sur la machine : sans ce garde, elle détournait l'endpoint
+        # d'un provider DeepSeek vers api.anthropic.com. Les appels partaient
+        # alors en 404, chaque décision retombait sur le fallback rule-based,
+        # et rien ne le signalait autrement qu'une ligne d'erreur par cycle.
+        base_url = os.getenv('LLM_BASE_URL')
+        provider = str(self._config['llm'].get('provider', '')).lower()
+        if not base_url and provider in ('anthropic', 'claude'):
+            base_url = os.getenv('ANTHROPIC_BASE_URL')
         if base_url:
             self._config['llm']['base_url'] = base_url
     

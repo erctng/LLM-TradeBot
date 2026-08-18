@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import pytest
 import asyncio
 import numpy as np
-from src.agents.predict_agent import PredictAgent, PredictResult
+from src.agents.predict import PredictAgent, PredictResult
 
 
 class TestPredictResult:
@@ -83,11 +83,24 @@ class TestPredictAgentPreprocessing:
         assert clean['bb_position'] == -100.0
 
 
+def _rule_based_agent() -> PredictAgent:
+    """PredictAgent forcé en mode règles.
+
+    Pointer vers un modèle inexistant fait échouer `_try_load_ml_model`, qui
+    laisse `ml_model` à None. Sans cela, l'agent charge le vrai LightGBM dès
+    que `models/prophet_lgb_BTCUSDT.pkl` existe, et un dictionnaire de 5
+    features sur la cinquantaine attendue est complété par des zéros — la
+    prédiction ne teste alors plus rien de la logique de scoring.
+    """
+    return PredictAgent(model_path='models/__absent_pour_tests__.pkl')
+
+
 class TestPredictAgentPrediction:
-    """Test prediction logic"""
-    
+    """Test prediction logic (mode règles, isolé du modèle ML)"""
+
     def test_bullish_prediction(self):
-        agent = PredictAgent()
+        agent = _rule_based_agent()
+        assert agent.ml_model is None
         features = {
             'trend_confirmation_score': 2.5,
             'rsi': 30,
@@ -95,26 +108,28 @@ class TestPredictAgentPrediction:
             'ema_cross_strength': 0.8,
             'volume_ratio': 1.6,
         }
-        
+
         result = asyncio.run(agent.predict(features))
-        
+
+        assert result.model_type == 'rule_based'
         assert result.probability_up > 0.6
         assert result.signal in ['bullish', 'strong_bullish']
-    
+
     def test_bearish_prediction(self):
-        agent = PredictAgent()
+        agent = _rule_based_agent()
         features = {
             'trend_confirmation_score': -2.5,
             'rsi': 75,
             'bb_position': 85,
             'ema_cross_strength': -0.8,
         }
-        
+
         result = asyncio.run(agent.predict(features))
-        
+
+        assert result.model_type == 'rule_based'
         assert result.probability_down > 0.6
         assert result.signal in ['bearish', 'strong_bearish']
-    
+
     def test_probability_bounds(self):
         agent = PredictAgent()
         

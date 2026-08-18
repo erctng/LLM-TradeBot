@@ -2,8 +2,9 @@ import os
 import json
 import logging
 from typing import Dict, List, Optional
-from src.utils.llm_client import create_client, LLMConfig
-from src.config.config import Config
+from src.llm.base import LLMConfig
+from src.llm.factory import create_client
+from src.config import Config
 from src.utils.prompt_manager import PromptManager
 
 log = logging.getLogger(__name__)

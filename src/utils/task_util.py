@@ -1,11 +1,17 @@
+from __future__ import annotations
+
 import time
 import asyncio
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from src.utils.logger import log
 from src.server.state import global_state
-from src.trading import CycleContext
+
+if TYPE_CHECKING:
+    # Import différé : src.trading expose MultiAgentTradingBot, qui remonte
+    # jusqu'à ce module. CycleContext ne sert ici que d'annotation.
+    from src.trading import CycleContext
 
 from src.agents.runtime_events import emit_global_runtime_event
 

@@ -19,6 +19,7 @@ from dataclasses import asdict
 
 from src.agents.data_sync import MarketSnapshot
 from src.utils.logger import log
+from src.utils.oi_tracker import oi_tracker
 from src.agents.regime_detector_agent import RegimeDetector
 import numpy as np
 
@@ -366,42 +367,62 @@ class QuantAnalystAgent:
             elif funding_rate < -0.05: score += 30
             elif funding_rate < -0.01: score += 15
         
-        vol_change_pct = 0.0
+        # Open interest réel si l'historique couvre la fenêtre, sinon proxy
+        # volume. Les deux ne mesurent pas la même chose — l'OI décrit le
+        # positionnement net, le volume la rotation — donc la provenance est
+        # remontée jusqu'au prompt : un agent à qui l'on présente un volume
+        # comme de l'open interest raisonne sur une donnée qui n'existe pas.
+        change_pct = 0.0
         fuel_signal = "neutral"
+        oi_source = "unavailable"
+
+        symbol = getattr(snapshot, 'symbol', None)
+        if symbol and oi_tracker.has_coverage(symbol, hours=24):
+            change_pct = oi_tracker.get_change_pct(symbol, hours=24)
+            oi_source = "open_interest"
+            has_data = True
+
         df_1h = snapshot.stable_1h
-        if df_1h is not None and len(df_1h) >= 24:
+        if oi_source == "unavailable" and df_1h is not None and len(df_1h) >= 24:
             has_data = True
             current_vol = df_1h['volume'].iloc[-1]
             avg_vol = df_1h['volume'].iloc[-25:-1].mean()
             if avg_vol > 0:
                 vol_ratio = current_vol / avg_vol
-                vol_change_pct = max(min((vol_ratio - 1) * 100, 200), -100)
-            
-            details['oi_change_24h_pct'] = vol_change_pct
-            if vol_change_pct > 50:
+                # Écrêtage à ±200 % : au-delà, la valeur sature et cesse de
+                # discriminer. Elle ne doit donc pas être lue comme une mesure.
+                change_pct = max(min((vol_ratio - 1) * 100, 200), -100)
+                oi_source = "volume_proxy"
+
+        if oi_source != "unavailable":
+            details['oi_change_24h_pct'] = change_pct
+            details['oi_source'] = oi_source
+            if change_pct > 50:
                 score += 20
                 fuel_signal = "strong"
-            elif vol_change_pct > 20:
+            elif change_pct > 20:
                 score += 10
                 fuel_signal = "moderate"
-            elif vol_change_pct < -50:
+            elif change_pct < -50:
                 score -= 10
                 fuel_signal = "weak"
-        
+
         oi_fuel = {
-            'oi_change_24h': vol_change_pct,
+            'oi_change_24h': change_pct,
             'fuel_signal': fuel_signal,
-            'fuel_score': min(100, max(-100, int(vol_change_pct))),
+            'fuel_score': min(100, max(-100, int(change_pct))),
             'whale_trap_risk': False,
-            'fuel_strength': fuel_signal, 
-            'is_proxy': True
+            'fuel_strength': fuel_signal,
+            'oi_source': oi_source,
+            'is_proxy': oi_source != "open_interest",
         }
-        
+
         return {
             'score': score if has_data else 0,
             'details': details,
             'has_data': has_data,
             'total_sentiment_score': score if has_data else 0,
-            'oi_change_24h_pct': vol_change_pct,
-            'oi_fuel': oi_fuel, 
+            'oi_change_24h_pct': change_pct,
+            'oi_source': oi_source,
+            'oi_fuel': oi_fuel,
         }

@@ -31,7 +31,10 @@ from src.api.ai_trader_client import AITraderClient  # ✅ AI-Trader Sync Module
 from .trading_parameters import TradingParameters
 from .headless_filter import HeadlessFilter
 
-from src.runners import RunnerFactory
+# RunnerFactory est importé à la construction, pas au chargement du module :
+# src.runners.runner_factory importe src.trading, qui expose cette classe. Un
+# import au niveau module referme le cycle et rend tout le package src.runners
+# inimportable seul.
 
 from src.utils.action_protocol import (
     normalize_action,
@@ -90,6 +93,12 @@ class MultiAgentTradingBot:
         # 初始化客户端
         self.risk_manager = RiskManager()
         self.execution_engine = ExecutionEngine(self.client, self.risk_manager)
+
+        # 🛡️ Feed risk state on every recorded trade so the circuit breakers
+        # (consecutive losses / drawdown) actually accumulate. Without this the
+        # counters stay at zero and the breakers can never fire.
+        global_state.register_trade_observer(self._on_trade_recorded)
+        global_state.set_risk_gate(self.risk_manager.check_circuit_breakers)
         self.saver = DataSaver() # ✅ 初始化 Multi-Agent 数据保存器
         
         # 🧹 启动时清除历史实盘数据，只保留当前周期
@@ -161,6 +170,8 @@ class MultiAgentTradingBot:
             print("  ✅ DeepSeek StrategyEngine ready")
         else:
             print("  ⚠️ DeepSeek StrategyEngine not ready (Awaiting API Key)")
+
+        from src.runners import RunnerFactory
 
         self.runner_factory = RunnerFactory(
             self.config,
@@ -581,6 +592,24 @@ class MultiAgentTradingBot:
         except Exception as e:
             log.error(f"Cycle log insert failed: {e}")
 
+    def _on_trade_recorded(self, trade: Dict, equity: float, peak_equity: float):
+        """Feed risk state from every recorded trade.
+
+        Registered on global_state at construction. Closed trades drive the
+        consecutive-loss counter; every record refreshes the drawdown figure.
+        Both feed check_circuit_breakers() before any new position is opened.
+        """
+        try:
+            self.risk_manager.record_trade(trade)
+            self.risk_manager.update_drawdown(equity, peak_equity)
+
+            allowed, reason = self.risk_manager.check_circuit_breakers()
+            if not allowed:
+                global_state.add_log(f"[🛡️ CIRCUIT_BREAKER] {reason}")
+                log.warning(f"Circuit breaker armed: {reason}")
+        except Exception as e:
+            log.error(f"Risk state update failed: {e}")
+
     def _execute_suggested_open_trade(self, symbol: str, suggested: Any, cycle_id: Optional[str]) -> Dict:
         """Execute an already-audited open suggestion without re-running full analysis."""
         if isinstance(suggested, SuggestedTrade):
@@ -646,21 +675,21 @@ class MultiAgentTradingBot:
                 'cycle_id': cycle_id,
             }, suggestion_symbol, cycle_id=cycle_id)
 
-            trade_record = {
-                'open_cycle': global_state.cycle_counter,
-                'close_cycle': 0,
-                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'action': action.upper(),
-                'symbol': suggestion_symbol,
-                'entry_price': current_price,
-                'quantity': quantity,
-                'cost': position_value,
-                'exit_price': 0,
-                'pnl': 0.0,
-                'confidence': order_params.get('confidence'),
-                'status': 'SIMULATED',
-                'cycle': cycle_id,
-            }
+            trade_record = DataSaver.build_trade_record(
+                action=action,
+                symbol=suggestion_symbol,
+                entry_price=current_price,
+                quantity=quantity,
+                status='SIMULATED',
+                confidence=order_params.get('confidence'),
+                open_cycle=global_state.cycle_counter,
+                cycle_id=cycle_id,
+                leverage=order_params.get('leverage', 1),
+                stop_loss=order_params.get('stop_loss') or order_params.get('stop_loss_price'),
+                take_profit=order_params.get('take_profit') or order_params.get('take_profit_price'),
+                decision_price=current_price,
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
             self.saver.save_trade(trade_record)
             global_state.trade_history.insert(0, trade_record)
             if len(global_state.trade_history) > 50:
@@ -695,21 +724,21 @@ class MultiAgentTradingBot:
             return {'status': 'failed', 'action': action, 'details': {'error': 'execution_failed'}}
 
         quantity = float(order_params.get('quantity', 0) or 0)
-        trade_record = {
-            'open_cycle': global_state.cycle_counter,
-            'close_cycle': 0,
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'action': action.upper(),
-            'symbol': suggestion_symbol,
-            'entry_price': current_price,
-            'quantity': quantity,
-            'cost': current_price * quantity,
-            'exit_price': 0,
-            'pnl': 0.0,
-            'confidence': order_params.get('confidence'),
-            'status': 'EXECUTED',
-            'cycle': cycle_id,
-        }
+        trade_record = DataSaver.build_trade_record(
+            action=action,
+            symbol=suggestion_symbol,
+            entry_price=current_price,
+            quantity=quantity,
+            status='EXECUTED',
+            confidence=order_params.get('confidence'),
+            open_cycle=global_state.cycle_counter,
+            cycle_id=cycle_id,
+            leverage=order_params.get('leverage', 1),
+            stop_loss=order_params.get('stop_loss') or order_params.get('stop_loss_price'),
+            take_profit=order_params.get('take_profit') or order_params.get('take_profit_price'),
+            decision_price=current_price,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
         self.saver.save_trade(trade_record)
         global_state.trade_history.insert(0, trade_record)
         if len(global_state.trade_history) > 50:
@@ -1198,9 +1227,20 @@ class MultiAgentTradingBot:
                 
                 runtime_settings = getattr(global_state, 'agent_settings', None)
                 runtime_agents = runtime_settings.get('agents', {}) if runtime_settings else None
-                if runtime_agents and runtime_agents != self._last_agent_config:
-                    log.info(f"🔧 Runtime agent config updated: {runtime_agents}")
-                    self._apply_agent_config(runtime_agents)
+                if runtime_agents:
+                    # Comparer des formes homogènes. `_last_agent_config` contient
+                    # la carte normalisée (agents activés uniquement) tandis que
+                    # `agent_settings` porte la configuration brute : les comparer
+                    # directement rendait la condition toujours vraie, et tous les
+                    # agents étaient reconstruits à chaque tour de boucle — une
+                    # fois par seconde, indéfiniment, sans qu'aucun cycle ne tourne.
+                    from src.agents.agent_config import AgentConfig
+                    runtime_map = AgentConfig.from_dict(
+                        {'agents': runtime_agents}
+                    ).get_enabled_agents()
+                    if runtime_map != self._last_agent_config:
+                        log.info(f"🔧 Runtime agent config updated: {runtime_map}")
+                        self._apply_agent_config(runtime_map)
 
                 # Check stop state FIRST - must break before continue
                 if global_state.execution_mode == 'Stopped':

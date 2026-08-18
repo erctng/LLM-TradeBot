@@ -13,7 +13,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.agents.data_sync_agent import MarketSnapshot
+from src.agents.data_sync import MarketSnapshot
 from src.backtest.agent_wrapper import BacktestAgentRunner
 from src.backtest.engine import BacktestConfig, BacktestEngine
 from src.backtest.portfolio import Side, Trade
